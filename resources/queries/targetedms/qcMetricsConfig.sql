@@ -24,6 +24,7 @@ SELECT
        qmc.Series2SchemaName,
        qmc.Series2QueryName,
        qmc.PrecursorScoped,
+       qmc.Container, -- including to lock out editing pre-configured qc metrics
        CASE WHEN qem.enabled IS NOT NULL THEN qem.enabled
             ELSE TRUE END AS Enabled,
        CASE WHEN qem.metric IS NULL THEN FALSE
