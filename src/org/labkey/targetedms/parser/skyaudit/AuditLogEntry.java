@@ -16,8 +16,11 @@
 package org.labkey.targetedms.parser.skyaudit;
 
 import org.labkey.api.data.SQLFragment;
+import org.labkey.api.data.SimpleFilter;
 import org.labkey.api.data.SqlExecutor;
 import org.labkey.api.data.Table;
+import org.labkey.api.data.TableSelector;
+import org.labkey.api.query.FieldKey;
 import org.labkey.api.util.GUID;
 import org.labkey.targetedms.TargetedMSManager;
 
@@ -51,6 +54,12 @@ public class AuditLogEntry
     protected GUID _documentGUID;
 
     byte[] _calculatedHashBytes;
+
+    public static AuditLogEntry retrieve(int pEntryId){
+        SimpleFilter pkFilter = new SimpleFilter(FieldKey.fromParts("entryId"), pEntryId);
+        AuditLogEntry res = new TableSelector(TargetedMSManager.getTableInfoSkylineAuditLogEntry(), pkFilter, null).getObject(pEntryId, AuditLogEntry.class);
+        return res;
+    }
 
     public AuditLogTree getTreeEntry(){
         if(_entryId != null)

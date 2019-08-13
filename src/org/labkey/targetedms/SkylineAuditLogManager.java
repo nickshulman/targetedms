@@ -250,6 +250,7 @@ public class SkylineAuditLogManager
                     ent.persist();
                     persistedEntriesCount++;
                     AuditLogTree newTreeEntry = ent.getTreeEntry();
+                    assert newTreeEntry != null;
                     treePointer.addChild(newTreeEntry);
                     //advance the tree
                     treePointer = newTreeEntry;
@@ -489,6 +490,16 @@ public class SkylineAuditLogManager
             importer.deleteDocumentVersionLog(runIds.pop());
             tree = importer.buildLogTree(_docGUID);
             assertEquals(11, tree.getTreeSize());
+        }
+
+        @Test
+        public void TestEntryRetrieval() throws AuditLogException
+        {
+            AuditLogTree node = new SkylineAuditLogManager(_container, _user).buildLogTree(_docGUID);
+            while(node.iterator().hasNext()){
+                AuditLogEntry ent = AuditLogEntry.retrieve(node.getEntryId());
+                node = node.iterator().next();
+            }
         }
 
         @AfterClass
