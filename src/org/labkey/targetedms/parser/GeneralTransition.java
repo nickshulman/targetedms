@@ -269,4 +269,9 @@ public class GeneralTransition extends AnnotatedEntity<TransitionAnnotation>
                 || fragmentType.equalsIgnoreCase(Z_ION)
                 || fragmentType.equalsIgnoreCase(X_ION));
     }
+
+    public boolean isMs1()
+    {
+        return isPrecursorIon();
+    }
 }

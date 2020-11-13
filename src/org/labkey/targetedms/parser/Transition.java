@@ -243,4 +243,22 @@ public class Transition extends GeneralTransition
             return result;
         }
     }
+
+    public boolean isMs1()
+    {
+        if (!isPrecursorIon())
+        {
+            return false;
+        }
+        if (getNeutralLosses() != null && !getNeutralLosses().isEmpty())
+        {
+            return false;
+        }
+
+        if (getComplexFragmentIon() != null && !ComplexFragmentIonName.looksLikeIntactPrecursor(getComplexFragmentIon())) {
+            return false;
+        }
+
+        return true;
+    }
 }
