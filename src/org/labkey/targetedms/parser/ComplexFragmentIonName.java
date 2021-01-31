@@ -19,7 +19,6 @@ import org.labkey.api.util.Pair;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class ComplexFragmentIonName
@@ -68,12 +67,15 @@ public class ComplexFragmentIonName
         _children.add(child);
     }
 
+    /**
+     * Returns true if this name uses the pre-21.1 format where crosslinked were identified by which modification they
+     * were attached to.
+     * After 21.1, crosslinked peptides are a flat list with any number of crosslinks between them
+     */
     public boolean isLegacyFormat()
     {
         return _children.stream().anyMatch(pair->pair.first != null);
     }
-
-
 
     @Override
     public String toString() {
