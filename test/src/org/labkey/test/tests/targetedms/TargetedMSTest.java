@@ -15,7 +15,6 @@
  */
 package org.labkey.test.tests.targetedms;
 
-import org.apache.tika.utils.SystemUtils;
 import org.junit.BeforeClass;
 import org.labkey.test.BaseWebDriverTest;
 import org.labkey.test.Locator;
@@ -176,7 +175,12 @@ public abstract class TargetedMSTest extends BaseWebDriverTest
 
     protected void setupFolder(FolderType folderType)
     {
-        _containerHelper.createProject(getProjectName(), "Panorama");
+       setUpFolder(getProjectName(),folderType);
+    }
+
+    protected void setUpFolder(String folderName, FolderType folderType )
+    {
+        _containerHelper.createProject(folderName, "Panorama");
         waitForElement(Locator.linkContainingText("Save"));
         clickAndWait(Locator.linkContainingText("Next"));
         selectFolderType(folderType);
@@ -291,6 +295,13 @@ public abstract class TargetedMSTest extends BaseWebDriverTest
         clickButton("Finish");
     }
 
+    /** Verify that the comparison plots have been AJAX'd into place */
+    protected void ensureComparisonPlots(String title)
+    {
+        waitForElement(Locator.xpath("//div[@id ='peakAreasGraph']/div[normalize-space()='" + title + "']"));
+        waitForElement(Locator.xpath("//div[@id ='retentionTimesGraph']/div[normalize-space()='" + title + "']"));
+    }
+
     protected void verifyQcSummary(int docCount, int sampleFileCount, int precursorCount)
     {
         QCSummaryWebPart qcSummaryWebPart = new PanoramaDashboard(this).getQcSummaryWebPart();
@@ -321,7 +332,7 @@ public abstract class TargetedMSTest extends BaseWebDriverTest
     }
 
     @LogMethod
-    protected void createGuideSetFromTable(GuideSet guideSet)
+    public int createGuideSetFromTable(GuideSet guideSet)
     {
         if (!"Guide Sets".equals(getUrlParam("pageId", true)))
             clickTab("Guide Sets");
@@ -329,6 +340,8 @@ public abstract class TargetedMSTest extends BaseWebDriverTest
         GuideSetWebPart guideSetWebPart = new GuideSetWebPart(this, getProjectName());
         GuideSetPage guideSetPage = guideSetWebPart.startInsert();
         guideSetPage.insert(guideSet, null);
+
+        return guideSet.getRowId();
     }
 
     @LogMethod

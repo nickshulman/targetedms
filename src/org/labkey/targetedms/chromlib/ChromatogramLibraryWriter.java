@@ -43,26 +43,19 @@ public class ChromatogramLibraryWriter
     private Dao<LibInfo> _libInfoDao;
     private Dao<LibSampleFile> _sampleFileDao;
 
-    // Proteomics
     private Dao<LibStructuralModification> _structuralModificationDao;
     private Dao<LibIsotopeModification> _isotopeModificationDao;
     private Dao<LibProtein> _proteinDao;
     private Dao<LibPeptide> _peptideDao;
     private Dao<LibIrtLibrary> _irtLibraryDao;
 
-    // Small molecule
-    private Dao<LibMoleculeList> _moleculeListDao;
-    private Dao<LibMolecule> _moleculeDao;
-
     //Predictor
     private Dao<LibPredictor> _predictorDao;
 
     // Maps are keyed with the Panorama DB rowId values
     private final Map<Long, LibProtein> _libProteinCache = new LinkedHashMap<>();
-    private final Map<Long, LibMoleculeList> _libMoleculeListCache = new LinkedHashMap<>();
 
     private int _peptideCount;
-    private int _moleculeCount;
 
     private Path _libFile;
 
@@ -96,16 +89,10 @@ public class ChromatogramLibraryWriter
         _isotopeModificationDao = new LibIsotopeModificationDao();
 
         Dao<LibPrecursor> precursorDao = new LibPrecursorDao(new LibPrecursorIsotopeModificationDao(),
-                new LibPrecursorRetentionTimeDao(Constants.Column.PrecursorId),
+                new LibPrecursorRetentionTimeDao(Constants.Table.PrecursorRetentionTime, Constants.Column.PrecursorId, Constants.PrecursorRetentionTimeColumn.values()),
                 new LibTransitionDao(new LibTransitionOptimizationDao()));
         _peptideDao = new LibPeptideDao(new LibPeptideStructuralModDao(), precursorDao);
         _proteinDao = new LibProteinDao(_peptideDao);
-
-        Dao<LibMoleculePrecursor> moleculePrecursorDao = new LibMoleculePrecursorDao(
-                new LibPrecursorRetentionTimeDao(Constants.Column.MoleculePrecursorId),
-                new LibMoleculeTransitionDao(new LibMoleculeTransitionOptimizationDao()));
-        _moleculeDao = new LibMoleculeDao(moleculePrecursorDao);
-        _moleculeListDao = new LibMoleculeListDao(_moleculeDao);
 
         _irtLibraryDao = new LibIrtLibraryDao();
 
@@ -131,10 +118,9 @@ public class ChromatogramLibraryWriter
 
     private void flushCache() throws SQLException
     {
-        if (null != _proteinDao && null != _moleculeListDao)
+        if (null != _proteinDao)
         {
             flush(_proteinDao, _libProteinCache.values());
-            flush(_moleculeListDao, _libMoleculeListCache.values());
         }
     }
 
@@ -176,11 +162,11 @@ public class ChromatogramLibraryWriter
         protein.addChild(libPeptide);
     }
 
-    public void writeMolecule(LibMolecule libMolecule, Molecule molecule)
+    public void writeMolecule(LibPeptide libMolecule, Molecule molecule)
     {
-        LibMoleculeList moleculeList = _libMoleculeListCache.computeIfAbsent(molecule.getPeptideGroupId(), (id) ->
-                new LibMoleculeList(PeptideGroupManager.get(id)));
-        _moleculeCount++;
+        LibProtein moleculeList = _libProteinCache.computeIfAbsent(molecule.getPeptideGroupId(), (id) ->
+                new LibProtein(PeptideGroupManager.get(id)));
+        _peptideCount++;
         moleculeList.addChild(libMolecule);
     }
 
@@ -194,19 +180,9 @@ public class ChromatogramLibraryWriter
         return _libProteinCache.size();
     }
 
-    public int getMoleculeListCount()
-    {
-        return _libMoleculeListCache.size();
-    }
-
     public int getPeptideCount()
     {
         return _peptideCount;
-    }
-
-    public int getMoleculeCount()
-    {
-        return _moleculeCount;
     }
 
     private <T> void saveEntry(Dao<T> dao, T object) throws SQLException

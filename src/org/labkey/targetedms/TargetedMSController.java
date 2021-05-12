@@ -18,23 +18,31 @@ package org.labkey.targetedms;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keypoint.PngEncoder;
+import org.apache.batik.dom.GenericDOMImplementation;
+import org.apache.batik.svggen.SVGGraphics2D;
+import org.apache.batik.svggen.SVGGraphics2DIOException;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jfree.chart.ChartColor;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartUtilities;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.title.TextTitle;
 import org.jfree.data.category.DefaultCategoryDataset;
+import org.jfree.data.xy.XYDataset;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Assert;
 import org.junit.Test;
+import org.labkey.api.action.ApiJsonWriter;
 import org.labkey.api.action.ApiResponse;
 import org.labkey.api.action.ApiSimpleResponse;
 import org.labkey.api.action.ApiUsageException;
@@ -126,6 +134,7 @@ import org.labkey.api.util.DateUtil;
 import org.labkey.api.util.FileUtil;
 import org.labkey.api.util.HelpTopic;
 import org.labkey.api.util.HtmlString;
+import org.labkey.api.util.Link;
 import org.labkey.api.util.PageFlowUtil;
 import org.labkey.api.util.Pair;
 import org.labkey.api.util.StringUtilsLabKey;
@@ -148,6 +157,7 @@ import org.labkey.api.view.ViewContext;
 import org.labkey.api.view.WebPartView;
 import org.labkey.api.view.template.ClientDependency;
 import org.labkey.api.view.template.PageConfig;
+import org.labkey.api.visualization.VisualizationService;
 import org.labkey.targetedms.chart.ChromatogramChartMakerFactory;
 import org.labkey.targetedms.chart.ComparisonChartMaker;
 import org.labkey.targetedms.chromlib.ChromatogramLibraryUtils;
@@ -163,6 +173,7 @@ import org.labkey.targetedms.model.GuideSetStats;
 import org.labkey.targetedms.model.QCMetricConfiguration;
 import org.labkey.targetedms.model.QCPlotFragment;
 import org.labkey.targetedms.model.RawMetricDataSet;
+import org.labkey.targetedms.model.passport.IKeyword;
 import org.labkey.targetedms.outliers.OutlierGenerator;
 import org.labkey.targetedms.parser.GeneralMolecule;
 import org.labkey.targetedms.parser.GeneralMoleculeChromInfo;
@@ -182,9 +193,9 @@ import org.labkey.targetedms.parser.SampleFileChromInfo;
 import org.labkey.targetedms.parser.SkylineBinaryParser;
 import org.labkey.targetedms.parser.SkylineDocumentParser;
 import org.labkey.targetedms.parser.TransitionChromInfo;
-import org.labkey.targetedms.parser.blib.BlibSpectrumReader;
 import org.labkey.targetedms.parser.list.ListDefinition;
 import org.labkey.targetedms.parser.skyaudit.AuditLogEntry;
+import org.labkey.targetedms.parser.speclib.SpeclibReaderException;
 import org.labkey.targetedms.pipeline.ChromatogramCrawlerJob;
 import org.labkey.targetedms.query.ChromatogramDisplayColumnFactory;
 import org.labkey.targetedms.query.ConflictResultsManager;
@@ -206,6 +217,7 @@ import org.labkey.targetedms.query.TargetedMSTable;
 import org.labkey.targetedms.query.TransitionManager;
 import org.labkey.targetedms.search.ModificationSearchWebPart;
 import org.labkey.targetedms.view.CalibrationCurveChart;
+import org.labkey.targetedms.view.CalibrationCurveView;
 import org.labkey.targetedms.view.CalibrationCurvesView;
 import org.labkey.targetedms.view.ChromatogramsDataRegion;
 import org.labkey.targetedms.view.DocumentPrecursorsView;
@@ -228,6 +240,8 @@ import org.labkey.targetedms.view.spectrum.PeptideSpectrumView;
 import org.springframework.validation.BindException;
 import org.springframework.validation.Errors;
 import org.springframework.web.servlet.ModelAndView;
+import org.w3c.dom.DOMImplementation;
+import org.w3c.dom.Document;
 
 import javax.servlet.http.HttpServletResponse;
 import java.awt.*;
@@ -236,6 +250,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringWriter;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -258,6 +273,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static org.labkey.api.targetedms.TargetedMSService.FOLDER_TYPE_PROP_NAME;
@@ -270,8 +286,10 @@ import static org.labkey.api.util.DOM.Attribute.method;
 import static org.labkey.api.util.DOM.Attribute.src;
 import static org.labkey.api.util.DOM.Attribute.width;
 import static org.labkey.api.util.DOM.DIV;
+import static org.labkey.api.util.DOM.SPAN;
 import static org.labkey.api.util.DOM.TD;
 import static org.labkey.api.util.DOM.TR;
+import static org.labkey.api.util.DOM.UL;
 import static org.labkey.api.util.DOM.X.FORM;
 import static org.labkey.api.util.DOM.at;
 import static org.labkey.api.util.DOM.cl;
@@ -524,7 +542,7 @@ public class TargetedMSController extends SpringActionController
         @Override
         public void addNavTrail(NavTree root)
         {
-            urlProvider(AdminUrls.class).addAdminNavTrail(root, "Chromatogram Crawler", new ActionURL(getClass(), getContainer()));
+            urlProvider(AdminUrls.class).addAdminNavTrail(root, "Chromatogram Crawler", getClass(), getContainer());
         }
     }
 
@@ -1113,7 +1131,7 @@ public class TargetedMSController extends SpringActionController
             List<GuideSet> guideSets = TargetedMSManager.getGuideSets(getContainer(), getUser());
             Map<Integer, QCMetricConfiguration> metricMap = enabledQCMetricConfigurations.stream().collect(Collectors.toMap(QCMetricConfiguration::getId, Function.identity()));
 
-            List<RawMetricDataSet> rawMetricDataSets = OutlierGenerator.get().getRawMetricDataSets(getContainer(), getUser(), enabledQCMetricConfigurations, null, null, Collections.emptyList());
+            List<RawMetricDataSet> rawMetricDataSets = OutlierGenerator.get().getRawMetricDataSets(getContainer(), getUser(), enabledQCMetricConfigurations, null, null, Collections.emptyList(), true);
 
             Map<GuideSetKey, GuideSetStats> stats = OutlierGenerator.get().getAllProcessedMetricGuideSets(rawMetricDataSets, guideSets.stream().collect(Collectors.toMap(GuideSet::getRowId, Function.identity())));
 
@@ -1136,6 +1154,8 @@ public class TargetedMSController extends SpringActionController
         private Date _startDate;
         private Date _endDate;
         private List<OutlierGenerator.AnnotationGroup> _selectedAnnotations;
+        private boolean _showExcluded;
+        private boolean _showReferenceGS;
 
         public int getMetricId()
         {
@@ -1216,6 +1236,26 @@ public class TargetedMSController extends SpringActionController
         {
             _selectedAnnotations = selectedAnnotations;
         }
+
+        public boolean isShowExcluded()
+        {
+            return _showExcluded;
+        }
+
+        public void setShowExcluded(boolean showExcluded)
+        {
+            _showExcluded = showExcluded;
+        }
+
+        public boolean isShowReferenceGS()
+        {
+            return _showReferenceGS;
+        }
+
+        public void setShowReferenceGS(boolean showReferenceGS)
+        {
+            _showReferenceGS = showReferenceGS;
+        }
     }
 
     /**
@@ -1243,19 +1283,74 @@ public class TargetedMSController extends SpringActionController
             OutlierGenerator generator = OutlierGenerator.get();
 
             int passedMetricId = form.getMetricId();
+            boolean filterQCPoints = false;
 
             List<GuideSet> guideSets = TargetedMSManager.getGuideSets(getContainer(), getUser());
+            GuideSet closestOutOfRangeGuideSet;
+            var rangeStartDate = form.getStartDate();
+            if (form.isShowReferenceGS() && !guideSets.isEmpty())
+            {
+                closestOutOfRangeGuideSet = getClosestPastGuideSet(guideSets, form.getStartDate());
+                if (null != closestOutOfRangeGuideSet)
+                {
+                    rangeStartDate = closestOutOfRangeGuideSet.getTrainingStart();
+                    filterQCPoints = true;
+                }
+            }
 
-            List<QCMetricConfiguration> qcMetricConfigurations = TargetedMSManager.get()
+            final Date qcStartDate = rangeStartDate;
+            List<QCMetricConfiguration> qcMetricConfigurations = TargetedMSManager
                     .getEnabledQCMetricConfigurations(getContainer(), getUser())
                     .stream()
                     .filter(qcMetricConfiguration -> qcMetricConfiguration.getId() == passedMetricId)
                     .collect(Collectors.toList());
-            List<RawMetricDataSet> rawMetricDataSets = generator.getRawMetricDataSets(getContainer(), getUser(), qcMetricConfigurations, form.getStartDate(), form.getEndDate(), form.getSelectedAnnotations());
+
+            // get start date and end date for this qc folder
+            Map<String,Object> qcFolderDateRange = TargetedMSManager.getQCFolderDateRange(getContainer());
+            Date qcFolderStartDate = (Date) qcFolderDateRange.get("startDate");
+            Date qcFolderEndDate = (Date) qcFolderDateRange.get("endDate");
+
+            // always query for the full range
+            List<RawMetricDataSet> rawMetricDataSets = generator.getRawMetricDataSets(getContainer(), getUser(), qcMetricConfigurations, qcFolderStartDate, qcFolderEndDate, form.getSelectedAnnotations(), form.isShowExcluded());
             Map<GuideSetKey, GuideSetStats> stats = generator.getAllProcessedMetricGuideSets(rawMetricDataSets, guideSets.stream().collect(Collectors.toMap(GuideSet::getRowId, Function.identity())));
+            boolean zoomedRange = qcFolderStartDate != null &&
+                    qcFolderEndDate != null &&
+                    (DateUtil.getDateOnly(qcFolderStartDate).compareTo(rangeStartDate) != 0 ||
+                    DateUtil.getDateOnly(qcFolderEndDate).compareTo(form.getEndDate()) != 0);
+            Map<GuideSetKey, GuideSetStats> targetedStats;
+
+            if (zoomedRange)
+            {
+                // filter the stats for targeted range
+                Predicate<RawMetricDataSet> withInDateRange = rawMetricDataSet -> rawMetricDataSet.getAcquiredTime() != null &&
+                        (qcStartDate != null &&
+                        (rawMetricDataSet.getAcquiredTime().after(qcStartDate)
+                                || DateUtil.getDateOnly(rawMetricDataSet.getAcquiredTime()).compareTo(qcStartDate) == 0)) &&
+                        (form.getEndDate() != null &&
+                        (rawMetricDataSet.getAcquiredTime().before(form.getEndDate())
+                                || DateUtil.getDateOnly(rawMetricDataSet.getAcquiredTime()).compareTo(form.getEndDate()) == 0));
+                rawMetricDataSets = rawMetricDataSets
+                        .stream()
+                        .filter(withInDateRange)
+                        .collect(Collectors.toList());
+                targetedStats = generator.getAllProcessedMetricGuideSets(rawMetricDataSets, guideSets.stream().collect(Collectors.toMap(GuideSet::getRowId, Function.identity())));
+                // attach mean and sd stats from full stats
+                targetedStats.forEach((guideSetKey, guideSetStats) -> {
+                    GuideSetStats correctGuideSetStats = stats.get(guideSetKey);
+                    guideSetStats.setAverage(correctGuideSetStats.getAverage());
+                    guideSetStats.setStandardDeviation(correctGuideSetStats.getStandardDeviation());
+                    guideSetStats.setMovingRangeAverage(correctGuideSetStats.getMovingRangeAverage());
+                    guideSetStats.setMovingRangeStdDev(correctGuideSetStats.getMovingRangeStdDev());
+                });
+            }
+            else
+            {
+                targetedStats = stats;
+            }
+
             Map<Integer, QCMetricConfiguration> metricMap = qcMetricConfigurations.stream().collect(Collectors.toMap(QCMetricConfiguration::getId, Function.identity()));
-            List<SampleFileInfo> sampleFiles = OutlierGenerator.get().getSampleFiles(rawMetricDataSets, stats, metricMap, getContainer(), null);
-            List<QCPlotFragment> qcPlotFragments = OutlierGenerator.get().getQCPlotFragment(rawMetricDataSets, stats);
+            List<SampleFileInfo> sampleFiles = OutlierGenerator.get().getSampleFiles(rawMetricDataSets, targetedStats, metricMap, getContainer(), null);
+            List<QCPlotFragment> qcPlotFragments = OutlierGenerator.get().getQCPlotFragment(rawMetricDataSets, targetedStats);
 
             response.put("sampleFiles", sampleFiles.stream().map(SampleFileInfo::toQCPlotJSON).collect(Collectors.toList()));
             response.put("plotDataRows", qcPlotFragments
@@ -1263,8 +1358,32 @@ public class TargetedMSController extends SpringActionController
                     .map(qcPlotFragment -> qcPlotFragment.toJSON(form.isIncludeLJ(), form.isIncludeMR(), form.isIncludeMeanCusum(), form.isIncludeVariableCusum()))
                     .collect(Collectors.toList()));
             response.put("metricProps", metricMap.get(passedMetricId).toJSON());
+            response.put("filterQCPoints", filterQCPoints);
 
             return response;
+        }
+
+        private GuideSet getClosestPastGuideSet(List<GuideSet> guideSets, Date startDate)
+        {
+            GuideSet gs = null;
+            for (GuideSet guideSet : guideSets)
+            {
+                // guideset end date should be before or equal start date
+                if (!guideSet.isDefault() &&
+                        (guideSet.getTrainingEnd().before(startDate) || DateUtil.getDateOnly(guideSet.getTrainingEnd()).compareTo(startDate) == 0))
+                {
+                    if (null == gs)
+                    {
+                        gs = guideSet;
+                    }
+                    else if (guideSet.getTrainingEnd().after(gs.getTrainingEnd()))
+                    {
+                        gs = guideSet;
+                    }
+                }
+            }
+
+            return gs;
         }
     }
     // ------------------------------------------------------------------------
@@ -1354,7 +1473,7 @@ public class TargetedMSController extends SpringActionController
                 throw new NotFoundException("No Precursor or MoleculePrecursor found in this folder for id: " + pci.getPrecursorId());
             }
 
-            writePNG(form, response, chart);
+            writeChart(form, response, chart);
         }
     }
 
@@ -1375,6 +1494,7 @@ public class TargetedMSController extends SpringActionController
             factory.setSyncRt(form.isSyncX());
             factory.setSplitGraph(form.isSplitGraph());
             factory.setShowOptimizationPeaks(form.isShowOptimizationPeaks());
+            factory.setLegend(form.isLegend());
 
             JFreeChart chart;
             if (PrecursorManager.getPrecursor(getContainer(), pChromInfo.getPrecursorId(), getUser()) != null)
@@ -1390,35 +1510,123 @@ public class TargetedMSController extends SpringActionController
                 throw new NotFoundException("No Precursor or MoleculePrecursor found in this folder for id: " + pChromInfo.getPrecursorId());
             }
 
-            writePNG(form, response, chart);
+            writeChart(form, response, chart);
         }
     }
 
-    private void writePNG(AbstractChartForm form, HttpServletResponse response, JFreeChart chart)
-            throws IOException
+    private void writeChart(AbstractChartForm form, HttpServletResponse response, JFreeChart chart)
+            throws Exception
     {
-        response.setContentType("image/png");
+        TextTitle title = chart.getTitle();
+        String filename = title == null ? "PanoramaPlot" : FileUtil.makeLegalName(title.getText().replace('"', '_'));
 
-        if(!form.hasDpi())
+        if ("json".equals(form.getFormat()))
         {
-            ChartUtilities.writeChartAsPNG(response.getOutputStream(), chart, form.getChartWidth(), form.getChartHeight());
+            Map<String, Object> jsonPayload = new HashMap<>();
+
+            String xLabel = null;
+            if (chart.getPlot() instanceof XYPlot)
+            {
+                List<Map<String, Object>> series = new ArrayList<>();
+                XYPlot plot = chart.getXYPlot();
+                XYDataset dataset = plot.getDataset();
+                for (int i = 0; i < dataset.getSeriesCount(); i++)
+                {
+                    Map<String, Object> info = new HashMap<>();
+                    info.put("label", dataset.getSeriesKey(i));
+                    ChartColor color = (ChartColor) plot.getRenderer().getSeriesPaint(i);
+                    info.put("color", String.format("%02X%02X%02X", color.getRed(), color.getGreen(), color.getBlue()));
+                    series.add(info);
+                }
+                jsonPayload.put("series", series);
+
+                if (plot.getDomainAxisCount() > 0)
+                {
+                    xLabel = plot.getDomainAxis().getLabel();
+                    plot.getDomainAxis().setLabel(null);
+                }
+            }
+            if (chart.getPlot() instanceof CategoryPlot)
+            {
+                CategoryPlot plot = chart.getCategoryPlot();
+                if (plot.getDomainAxisCount() > 0)
+                {
+                    xLabel = plot.getDomainAxis().getLabel();
+                    plot.getDomainAxis().setLabel(null);
+                }
+            }
+            if (xLabel != null)
+            {
+                jsonPayload.put("xLabel", xLabel);
+            }
+            jsonPayload.put("title", title == null ? null : title.getText());
+            // Null out the title so that it's not part of the SVG and let the client render it as text via the DOM
+            chart.setTitle((String)null);
+            jsonPayload.put("svg", renderSVG(form, chart));
+            new ApiSimpleResponse(jsonPayload).render(new ApiJsonWriter(response));
+        }
+        else if ("svg".equalsIgnoreCase(form.getFormat()))
+        {
+            response.setContentType("image/svg+xml");
+            response.getWriter().write(renderSVG(form, chart));
+        }
+        else if ("pdf".equalsIgnoreCase(form.getFormat()))
+        {
+            VisualizationService.get().renderSvgAsPdf(renderSVG(form, chart), filename + ".pdf", getViewContext().getResponse());
         }
         else
         {
-            int dpi = form.getDpi();
-            double scaleFactor = (double)dpi/(double)AbstractChartForm.SCREEN_RES;
-            int w = form.getChartWidth();
-            int h = form.getChartHeight();
-            int desiredWidth = (int) (w * scaleFactor);
-            int desiredHeight = (int) (h * scaleFactor);
+            response.setContentType("image/png");
 
-            BufferedImage image = chart.createBufferedImage(desiredWidth, desiredHeight, w, h, null);
+            if ("pngDownload".equalsIgnoreCase(form.getFormat()))
+            {
+                response.addHeader("Content-Disposition", "attachment; filename=\"" + filename + ".png" + "\"");
+            }
 
-            PngEncoder encoder = new PngEncoder(image);
-            encoder.setDpi(dpi, dpi);
-            byte[] bytes = encoder.pngEncode();
-            response.getOutputStream().write(bytes);
+            if (!form.hasDpi())
+            {
+                ChartUtilities.writeChartAsPNG(response.getOutputStream(), chart, form.getChartWidth(), form.getChartHeight(), false, 5);
+            }
+            else
+            {
+                int dpi = form.getDpi();
+                double scaleFactor = (double) dpi / (double) AbstractChartForm.SCREEN_RES;
+                int w = form.getChartWidth();
+                int h = form.getChartHeight();
+                int desiredWidth = (int) (w * scaleFactor);
+                int desiredHeight = (int) (h * scaleFactor);
+
+                BufferedImage image = chart.createBufferedImage(desiredWidth, desiredHeight, w, h, null);
+                PngEncoder encoder = new PngEncoder(image);
+                encoder.setDpi(dpi, dpi);
+                encoder.setCompressionLevel(5);
+                byte[] bytes = encoder.pngEncode();
+                response.getOutputStream().write(bytes);
+            }
         }
+    }
+
+    @NotNull
+    private String renderSVG(AbstractChartForm form, JFreeChart chart) throws SVGGraphics2DIOException
+    {
+        DOMImplementation domImpl = GenericDOMImplementation.getDOMImplementation();
+
+        // Create an instance of org.w3c.dom.Document.
+        String svgNS = "http://www.w3.org/2000/svg";
+        Document document = domImpl.createDocument(svgNS, "svg", null);
+
+        // Create an instance of the SVG Generator from Batik
+        SVGGraphics2D svgGenerator = new SVGGraphics2D(document);
+        Dimension dim = new Dimension(form.getChartWidth(), form.getChartHeight());
+        svgGenerator.setSVGCanvasSize(dim);
+        Rectangle r = new Rectangle(dim);
+
+        chart.draw(svgGenerator, r);
+
+        // Render SVG to a string
+        StringWriter out = new StringWriter();
+        svgGenerator.stream(out, true); // Use CSS style attributes
+        return out.toString();
     }
 
     @RequiresPermission(ReadPermission.class)
@@ -1453,7 +1661,7 @@ public class TargetedMSController extends SpringActionController
                 throw new NotFoundException("No Peptide or Molecule found in this folder for id: " + gmChromInfo.getGeneralMoleculeId());
             }
 
-            writePNG(form, response, chart);
+            writeChart(form, response, chart);
         }
     }
 
@@ -1518,7 +1726,7 @@ public class TargetedMSController extends SpringActionController
             vbox.addView(gridView);
 
             // Summary charts for the precursor
-            SummaryChartBean summaryChartBean = new SummaryChartBean();
+            SummaryChartBean summaryChartBean = new SummaryChartBean(_run);
             summaryChartBean.setPeptideId(_precursor.getGeneralMoleculeId());
             summaryChartBean.setPrecursorId(_precursor.getId());
             summaryChartBean.setReplicateAnnotationNameList(ReplicateManager.getReplicateAnnotationNamesForRun(_run.getId()));
@@ -1601,7 +1809,7 @@ public class TargetedMSController extends SpringActionController
             gridView.setTitle("Chromatograms");
 
             // Summary charts for the molecule precursor
-            SummaryChartBean summaryChartBean = new SummaryChartBean();
+            SummaryChartBean summaryChartBean = new SummaryChartBean(_run);
             summaryChartBean.setMoleculeId(_precursor.getGeneralMoleculeId());
             summaryChartBean.setMoleculePrecursorId(_precursor.getId());
             summaryChartBean.setReplicateAnnotationNameList(ReplicateManager.getReplicateAnnotationNamesForRun(_run.getId()));
@@ -2167,7 +2375,7 @@ public class TargetedMSController extends SpringActionController
             vbox.addView(chromatogramsBox);
 
             // Summary charts for the peptide
-            SummaryChartBean summaryChartBean = new SummaryChartBean();
+            SummaryChartBean summaryChartBean = new SummaryChartBean(_run);
             summaryChartBean.setPeptideId(peptideId);
             summaryChartBean.setReplicateAnnotationNameList(ReplicateManager.getReplicateAnnotationNamesForRun(_run.getId()));
             summaryChartBean.setReplicateAnnotationValueList(ReplicateManager.getUniqueSortedAnnotationNameValue(_run.getId()));
@@ -2265,7 +2473,7 @@ public class TargetedMSController extends SpringActionController
             vbox.addView(chromatogramsBox);
 
             // Summary charts for the molecule
-            SummaryChartBean summaryChartBean = new SummaryChartBean();
+            SummaryChartBean summaryChartBean = new SummaryChartBean(_run);
             summaryChartBean.setMoleculeId(moleculeId);
             summaryChartBean.setReplicateAnnotationNameList(ReplicateManager.getReplicateAnnotationNamesForRun(_run.getId()));
             summaryChartBean.setReplicateAnnotationValueList(ReplicateManager.getUniqueSortedAnnotationNameValue(_run.getId()));
@@ -2325,8 +2533,12 @@ public class TargetedMSController extends SpringActionController
         PipeRoot root = PipelineService.get().getPipelineRootSetting(getContainer());
         if (null != root)
         {
+            List<SpeclibReaderException> specLibErrors = new ArrayList<>();
+            List<LibrarySpectrumMatch> matches = LibrarySpectrumMatchGetter.getMatches(precursor, root.getContainer(), specLibErrors);
             addSpectrumViews(run, vbox,
-                    LibrarySpectrumMatchGetter.getMatches(precursor, root.getContainer()), errors);
+                    matches,
+                    LibrarySpectrumMatchGetter.getUnsupportedLibraries(run),
+                    specLibErrors);
         }
         else
         {
@@ -2342,8 +2554,12 @@ public class TargetedMSController extends SpringActionController
             LocalDirectory localDirectory = LocalDirectory.create(root, MODULE_NAME);
             try
             {
+                List<SpeclibReaderException> specLibErrors = new ArrayList<>();
+                List<LibrarySpectrumMatch> matches = LibrarySpectrumMatchGetter.getMatches(peptide, getUser(), getContainer(), root.getContainer(), specLibErrors);
                 addSpectrumViews(run, vbox,
-                        LibrarySpectrumMatchGetter.getMatches(peptide, getUser(), getContainer(), root.getContainer()), errors);
+                        matches,
+                        LibrarySpectrumMatchGetter.getUnsupportedLibraries(run),
+                        specLibErrors);
             }
             finally
             {
@@ -2356,7 +2572,8 @@ public class TargetedMSController extends SpringActionController
         }
     }
 
-    private void addSpectrumViews(TargetedMSRun run, VBox vbox, List<LibrarySpectrumMatch> libSpectraMatchList, BindException errors)
+    private void addSpectrumViews(TargetedMSRun run, VBox vbox, List<LibrarySpectrumMatch> libSpectraMatchList, List<String> unsupportedLibraries,
+                                  List<SpeclibReaderException> specLibErrors)
     {
         PeptideSettings.ModificationSettings modSettings = ModificationManager.getSettings(run.getRunId());
         int idx = 0;
@@ -2367,13 +2584,31 @@ public class TargetedMSController extends SpringActionController
             {
                 libSpecMatch.setMaxNeutralLosses(modSettings.getMaxNeutralLosses());
             }
-            PeptideSpectrumView spectrumView = new PeptideSpectrumView(libSpecMatch, errors);
+            PeptideSpectrumView spectrumView = new PeptideSpectrumView(libSpecMatch);
             spectrumView.enableExpandCollapse("PeptideSpectrumView_" + idx, false);
             vbox.addView(spectrumView);
 
             idx++;
         }
-
+        if(unsupportedLibraries.size() > 0)
+        {
+            HtmlView view = new HtmlView(DIV("Annotated spectra cannot be displayed from the following unsupported "
+                            + (unsupportedLibraries.size() == 1 ? "library" : "libraries") + ": ",
+                    (unsupportedLibraries.size() == 1 ?
+                            SPAN(cl("labkey-error"), unsupportedLibraries.get(0))
+                            : DIV(cl("labkey-error"), UL(unsupportedLibraries.stream().map(DOM::LI)))
+                    )
+            ));
+            view.setTitle("Unsupported Spectrum " + (unsupportedLibraries.size() == 1 ? "Library" : "Libraries"));
+            vbox.addView(view);
+        }
+        if(specLibErrors.size() > 0)
+        {
+            HtmlView view = new HtmlView(DOM.LK.ERRORS(specLibErrors.stream().map(e -> new LabKeyError(e.getMessage())).collect(Collectors.toList())));
+            view.setTitle("Spectrum Library Errors");
+            vbox.addView(view);
+            specLibErrors.forEach(e -> LOG.info(e.getMessage(), e));
+        }
     }
 
     @RequiresPermission(ReadPermission.class)
@@ -2419,32 +2654,21 @@ public class TargetedMSController extends SpringActionController
                 return response;
             }
 
-            Path blibFilePath = LibraryManager.getLibraryFilePath(run.getId(), library);
-            if(form.getRedundantRefSpectrumId() != 0)
-            {
-                blibFilePath = BlibSpectrumReader.redundantBlibPath(blibFilePath);
-            }
-
-            if (!Files.exists(blibFilePath))
-            {
-                response.put("error", "Library file " + blibFilePath + " does not exist.");
-                return response;
-            }
-
+            Path libFilePath = LibraryManager.getLibraryFilePath(run.getId(), library);
             PipeRoot root = PipelineService.get().getPipelineRootSetting(getContainer());
             if (null != root)
             {
-                LibrarySpectrumMatch spectrumMatch = null;
-                if(form.getRedundantRefSpectrumId() == 0)
+                LibrarySpectrumMatch spectrumMatch;
+                try
                 {
                     spectrumMatch = LibrarySpectrumMatchGetter.getSpectrumMatch(run, peptide, precursor, library,
-                            blibFilePath, root.getContainer());
+                            libFilePath, root.getContainer(), form.getRedundantRefSpectrumId(), form.getSourceFile());
                 }
-                else
+                catch (SpeclibReaderException e)
                 {
-                    spectrumMatch = LibrarySpectrumMatchGetter.getRedundantSpectrumMatch(run, peptide, precursor, library,
-                            blibFilePath, root.getContainer(),
-                            form.getRedundantRefSpectrumId());
+                    LOG.info(e.getMessage(), e);
+                    response.put("error", e.getMessage());
+                    return response;
                 }
 
                 if (spectrumMatch == null)
@@ -2479,6 +2703,7 @@ public class TargetedMSController extends SpringActionController
         private String _libraryName;
         private int _redundantRefSpectrumId;
         private long _precursorId;
+        private String _sourceFile;
 
         public String getLibraryName()
         {
@@ -2508,6 +2733,16 @@ public class TargetedMSController extends SpringActionController
         public void setPrecursorId(long precursorId)
         {
             _precursorId = precursorId;
+        }
+
+        public String getSourceFile()
+        {
+            return _sourceFile;
+        }
+
+        public void setSourceFile(String sourceFile)
+        {
+            _sourceFile = sourceFile;
         }
     }
 
@@ -2682,7 +2917,7 @@ public class TargetedMSController extends SpringActionController
                 form.setChartWidth(300);
             }
 
-            writePNG(form, response, chart);
+            writeChart(form, response, chart);
         }
     }
 
@@ -2741,7 +2976,7 @@ public class TargetedMSController extends SpringActionController
                 form.setChartWidth(300);
             }
 
-            writePNG(form, response, chart);
+            writeChart(form, response, chart);
         }
     }
 
@@ -2756,6 +2991,9 @@ public class TargetedMSController extends SpringActionController
         private Integer _chartWidth = null;
         private Integer _chartHeight = null;
         private int _dpi = 144;
+
+        private String _format = "png";
+        private boolean _legend = true;
 
         public int getChartWidth()
         {
@@ -2806,6 +3044,26 @@ public class TargetedMSController extends SpringActionController
         public boolean hasDpi()
         {
             return _dpi > SCREEN_RES;
+        }
+
+        public String getFormat()
+        {
+            return _format;
+        }
+
+        public void setFormat(String format)
+        {
+            _format = format;
+        }
+
+        public boolean isLegend()
+        {
+            return _legend;
+        }
+
+        public void setLegend(boolean legend)
+        {
+            _legend = legend;
         }
     }
 
@@ -3140,8 +3398,6 @@ public class TargetedMSController extends SpringActionController
         return runSummaryView;
     }
 
-    //
-
     @RequiresPermission(ReadPermission.class)
     public class ShowVersionsAction extends SimpleViewAction<RunDetailsForm>
     {
@@ -3411,7 +3667,6 @@ public class TargetedMSController extends SpringActionController
         {
             VBox vBox = new VBox();
             vBox.addView(getSummaryView(form, _run));
-            vBox.addView(new InstrumentSummaryWebPart(form.getViewContext()));
 
             VIEWTYPE view;
 
@@ -3683,7 +3938,8 @@ public class TargetedMSController extends SpringActionController
     @RequiresPermission(ReadPermission.class)
     public class ShowReplicatesAction extends ShowRunSingleDetailsAction<RunDetailsForm>
     {
-        private static final String DATA_REGION_NAME = "Replicate";
+        private static final String REPLICATE_DATA_REGION_NAME = "Replicate";
+        private static final String INSTRUMENT_SUMMARY_DATA_REGION_NAME = "InstrumentSummary";
 
         public ShowReplicatesAction()
         {
@@ -3693,10 +3949,25 @@ public class TargetedMSController extends SpringActionController
         @Override
         protected QueryView createQueryView(RunDetailsForm form, BindException errors, boolean forExport, String dataRegion)
         {
-            QuerySettings settings = new QuerySettings(getViewContext(), DATA_REGION_NAME, TargetedMSSchema.SAMPLE_FILE_RUN_PREFIX + _run.getRunId());
-            settings.setBaseSort(new Sort(FieldKey.fromParts("ReplicateId", "Name")));
-            TargetedMSSchema schema = new TargetedMSSchema(getUser(), getContainer());
-            return schema.createView(getViewContext(), settings, errors);
+            if (dataRegion.equalsIgnoreCase(INSTRUMENT_SUMMARY_DATA_REGION_NAME))
+            {
+                return new InstrumentSummaryWebPart(getViewContext());
+            }
+            else
+            {
+                QuerySettings settings = new QuerySettings(getViewContext(), REPLICATE_DATA_REGION_NAME, TargetedMSSchema.SAMPLE_FILE_RUN_PREFIX + _run.getRunId());
+                settings.setBaseSort(new Sort(FieldKey.fromParts("ReplicateId", "Name")));
+                TargetedMSSchema schema = new TargetedMSSchema(getUser(), getContainer());
+                return schema.createView(getViewContext(), settings, errors);
+            }
+        }
+
+        @Override
+        protected ModelAndView getHtmlView(RunDetailsForm form, BindException errors) throws Exception
+        {
+            VBox vBox = (VBox) super.getHtmlView(form, errors);
+            vBox.addView(createQueryView(form, errors, true, INSTRUMENT_SUMMARY_DATA_REGION_NAME), 1);
+            return vBox;
         }
     }
 
@@ -4184,7 +4455,7 @@ public class TargetedMSController extends SpringActionController
             ChromatogramChartMakerFactory factory = new ChromatogramChartMakerFactory();
             JFreeChart chart = factory.createSampleFileChromChart(chromInfo, getUser(), getContainer());
 
-            writePNG(form, response, chart);
+            writeChart(form, response, chart);
         }
     }
 
@@ -4209,41 +4480,12 @@ public class TargetedMSController extends SpringActionController
             _run = TargetedMSManager.getRun(group.getRunId());
             _proteinLabel = group.getLabel();
 
-            Integer peptideCount = TargetedMSManager.getPeptideGroupPeptideCount(_run, group.getId());
             Integer moleculeCount = TargetedMSManager.getPeptideGroupMoleculeCount(_run, group.getId());
-            boolean proteomics = peptideCount != null && peptideCount.intValue() > 0;
-
             // Peptide group details
-            DataRegion groupDetails = new DataRegion();
+            VBox result = new VBox();
+
             TargetedMSSchema schema = new TargetedMSSchema(getUser(), getContainer());
-            TableInfo tableInfo = schema.getTable(proteomics ? TargetedMSSchema.TABLE_PEPTIDE_GROUP : TargetedMSSchema.TABLE_MOLECULE_GROUP);
-            groupDetails.setColumns(tableInfo.getColumns("Label", "Description", "Decoy", "Note", "RunId"));
-            groupDetails.setButtonBar(new ButtonBar());
-            DetailsView groupDetailsView = new DetailsView(groupDetails, form.getId());
-            groupDetailsView.setTitle(proteomics ? "Protein" : "Molecule List");
-
-            VBox result = new VBox(groupDetailsView);
-
-
-            // Protein sequence coverage
-            if (group.getSequenceId() != null)
-            {
-                int seqId = group.getSequenceId().intValue();
-                List<String> peptideSequences = new ArrayList<>();
-                for (Peptide peptide : PeptideManager.getPeptidesForGroup(group.getId(), new TargetedMSSchema(getUser(), getContainer())))
-                {
-                    peptideSequences.add(peptide.getSequence());
-                }
-
-                ProteinService proteinService = ProteinService.get();
-                WebPartView sequenceView = proteinService.getProteinCoverageView(seqId, peptideSequences.toArray(new String[peptideSequences.size()]), 100, true);
-
-                sequenceView.setTitle("Sequence Coverage");
-                sequenceView.enableExpandCollapse("SequenceCoverage", false);
-                result.addView(sequenceView);
-
-                result.addView(proteinService.getAnnotationsView(seqId));
-            }
+            Integer peptideCount = addProteinSummaryViews(result, group, _run, getUser(), getContainer());
 
             // List of peptides
             if (peptideCount != null && peptideCount > 0)
@@ -4267,7 +4509,7 @@ public class TargetedMSController extends SpringActionController
                 result.addView(getGeneralMoleculeQueryView(form, schema, errors, "Small Molecules", "Molecule", baseVisibleColumns));
             }
 
-            SummaryChartBean summaryChartBean = new SummaryChartBean();
+            SummaryChartBean summaryChartBean = new SummaryChartBean(_run);
             summaryChartBean.setPeptideGroupId(form.getId());
             summaryChartBean.setReplicateList(ReplicateManager.getReplicatesForRun(group.getRunId()));
             summaryChartBean.setReplicateAnnotationNameList(ReplicateManager.getReplicateAnnotationNamesForRun(group.getRunId()));
@@ -4319,12 +4561,57 @@ public class TargetedMSController extends SpringActionController
         public void addNavTrail(NavTree root)
         {
             new ShowPrecursorListAction(getViewContext()).addNavTrail(root, _run);
-            if (_run != null)
+            if (_proteinLabel != null)
             {
-                root.addChild(_run.getDescription(), getShowRunURL(getContainer(), _run.getId()));
                 root.addChild(_proteinLabel);
             }
         }
+    }
+
+    public static Integer addProteinSummaryViews(VBox box, PeptideGroup group, TargetedMSRun run, User user, Container container)
+    {
+        Integer peptideCount = TargetedMSManager.getPeptideGroupPeptideCount(run, group.getId());
+        boolean proteomics = peptideCount != null && peptideCount.intValue() > 0;
+
+        JspView<PeptideGroup> detailsView = new JspView<>("/org/labkey/targetedms/view/moleculeListView.jsp", group);
+        detailsView.setFrame(WebPartView.FrameType.PORTAL);
+        detailsView.setTitle(proteomics ? "Protein" : "Molecule List");
+
+        box.addView(detailsView);
+
+        if (group.getSequenceId() != null)
+        {
+            int seqId = group.getSequenceId().intValue();
+            List<String> peptideSequences = new ArrayList<>();
+            for (Peptide peptide : PeptideManager.getPeptidesForGroup(group.getId(), new TargetedMSSchema(user, container)))
+            {
+                peptideSequences.add(peptide.getSequence());
+            }
+
+            ProteinService proteinService = ProteinService.get();
+            WebPartView<?> sequenceView = proteinService.getProteinCoverageView(seqId, peptideSequences.toArray(new String[0]), 100, true, group.getAccession());
+
+            sequenceView.setTitle("Sequence Coverage");
+            sequenceView.enableExpandCollapse("SequenceCoverage", false);
+            box.addView(sequenceView);
+
+            List<IKeyword> keywords = TargetedMSManager.getKeywords(seqId);
+
+            Map<String, Collection<HtmlString>> extraAnnotations = new LinkedHashMap<>();
+
+            for (IKeyword keyword : keywords)
+            {
+                HtmlString link = new Link.LinkBuilder(keyword.label).href("https://www.uniprot.org/keywords/" + keyword.id).target("_blank").clearClasses().getHtmlString();
+                if (IKeyword.BIOLOGICAL_PROCESS_CATEGORY.equals(keyword.categoryId))
+                    extraAnnotations.computeIfAbsent("Biological Processes", k -> new ArrayList<>()).add(link);
+                if (IKeyword.MOLECULAR_FUNCTION_CATEGORY.equals(keyword.categoryId))
+                    extraAnnotations.computeIfAbsent("Molecular Functions", k -> new ArrayList<>()).add(link);
+            }
+
+            box.addView(proteinService.getAnnotationsView(seqId, extraAnnotations));
+        }
+
+        return peptideCount;
     }
 
     public static class ProteinDetailForm
@@ -4362,6 +4649,13 @@ public class TargetedMSController extends SpringActionController
         private long _moleculeId;
         private long _moleculePrecursorId;
         private List<Molecule> _moleculeList;
+
+        private final TargetedMSRun _run;
+
+        private SummaryChartBean(TargetedMSRun run)
+        {
+            _run = run;
+        }
 
         public boolean isShowControls()
         {
@@ -4492,6 +4786,11 @@ public class TargetedMSController extends SpringActionController
         {
             _moleculeList = moleculeList;
         }
+
+        public TargetedMSRun getRun()
+        {
+            return _run;
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -4523,7 +4822,7 @@ public class TargetedMSController extends SpringActionController
                 searchURL.addParameter("seqId", group.getSequenceId().intValue());
                 searchURL.addParameter("identifier", group.getLabel());
                 getViewContext().getResponse().getWriter().write("<a href=\"" + searchURL + "\">Search for other references to this protein</a><br/>");
-                view = proteinService.getProteinCoverageView(seqId, peptideSequences.toArray(new String[peptideSequences.size()]), 40, true);
+                view = proteinService.getProteinCoverageView(seqId, peptideSequences.toArray(new String[peptideSequences.size()]), 40, true, null);
             }
             else
             {
@@ -7005,20 +7304,12 @@ public class TargetedMSController extends SpringActionController
         @Override
         public ModelAndView getView(CalibrationCurveForm calibrationCurveForm, BindException errors)
         {
-            _chart = new CalibrationCurveChart(getUser(), getContainer(), calibrationCurveForm);
-            JSONObject curveData = _chart.getCalibrationCurveData();
-            if(null == curveData)
-                throw new NotFoundException("Calibration curve not found. Run ID: " + calibrationCurveForm.getId() +
-                        " Curve ID: " + calibrationCurveForm.getCalibrationCurveId());
-
+            CalibrationCurveView curvePlotView = new CalibrationCurveView(getUser(), getContainer(), calibrationCurveForm.getCalibrationCurveId());
+            _chart = curvePlotView.getChart();
             _asProteomics = _chart.getMolecule() != null && _chart.getMolecule() instanceof Peptide;
 
-            calibrationCurveForm.setJsonData(curveData);
-            JspView<CalibrationCurveForm> curvePlotView = new JspView<>("/org/labkey/targetedms/view/calibrationCurve.jsp", calibrationCurveForm);
-            curvePlotView.setTitle("Calibration Curve");
-
             // Summary charts for the precursor
-            SummaryChartBean summaryChartBean = new SummaryChartBean();
+            SummaryChartBean summaryChartBean = new SummaryChartBean(_run);
             summaryChartBean.setShowControls(false);
             summaryChartBean.setInitialHeight(300);
             summaryChartBean.setInitialWidth(1200);
@@ -7054,7 +7345,6 @@ public class TargetedMSController extends SpringActionController
     public static class CalibrationCurveForm extends RunDetailsForm
     {
         int calibrationCurveId;
-        JSONObject jsonData;
 
         public int getCalibrationCurveId()
         {
@@ -7064,16 +7354,6 @@ public class TargetedMSController extends SpringActionController
         public void setCalibrationCurveId(int calibrationCurveId)
         {
             this.calibrationCurveId = calibrationCurveId;
-        }
-
-        public JSONObject getJsonData()
-        {
-            return jsonData;
-        }
-
-        public void setJsonData(JSONObject jsonData)
-        {
-            this.jsonData = jsonData;
         }
     }
 

@@ -180,6 +180,7 @@ public class TargetedMSSchema extends UserSchema
     public static final String TABLE_QC_METRIC_CONFIGURATION = "QCMetricConfiguration";
     public static final String TABLE_QC_METRIC_EXCLUSION = "QCMetricExclusion";
     public static final String TABLE_QC_ENABLED_METRICS = "QCEnabledMetrics";
+    public static final String TABLE_QC_TRACE_METRIC_VALUES = "QCTraceMetricValues";
 
     public static final String TABLE_GUIDE_SET = "GuideSet";
 
@@ -775,7 +776,7 @@ public class TargetedMSSchema extends UserSchema
                             @Override
                             public String renderURL(RenderContext ctx)
                             {
-                                Integer runId = ctx.get(FieldKey.fromParts("File", "Id"), Integer.class);
+                                Long runId = ctx.get(FieldKey.fromParts("File", "Id"), Long.class);
                                 if (runId == null)
                                     return null;
 
@@ -910,9 +911,13 @@ public class TargetedMSSchema extends UserSchema
         {
             return new QCMetricConfigurationTable(this, cf);
         }
-        if(TABLE_QC_ENABLED_METRICS.equalsIgnoreCase(name))
+        if (TABLE_QC_ENABLED_METRICS.equalsIgnoreCase(name))
         {
             return new QCEnabledMetricsTable(this, cf);
+        }
+        if (TABLE_QC_TRACE_METRIC_VALUES.equalsIgnoreCase(name))
+        {
+            return new QCTraceMetricValuesTable(this, cf);
         }
         if (TABLE_GUIDE_SET.equalsIgnoreCase(name))
         {
@@ -1002,7 +1007,8 @@ public class TargetedMSSchema extends UserSchema
                             public @NotNull Set<ClientDependency> getClientDependencies()
                             {
                                 Set<ClientDependency> result = super.getClientDependencies();
-                                result.add(ClientDependency.fromPath("ProteinCoverageMap.css"));
+                                result.add(ClientDependency.fromPath("MS2/ProteinCoverageMap.css"));
+                                result.add(ClientDependency.fromPath("MS2/ProteinCoverageMap.js"));
                                 result.add(ClientDependency.fromPath("util.js"));
                                 return result;
                             }
@@ -1270,6 +1276,8 @@ public class TargetedMSSchema extends UserSchema
                     return new DocTransitionsTableInfo(targetedMSSchema, cf);
                 }
             });
+            result.addWrapColumn("MoleculeTransition", result.getRealTable().getColumn("TransitionId")).
+                    setFk(new QueryForeignKey(new QueryForeignKey.Builder(this, cf).table(TABLE_MOLECULE_TRANSITION)));
 
             return result;
         }
@@ -1324,7 +1332,7 @@ public class TargetedMSSchema extends UserSchema
         {
             try
             {
-                TargetedMSRun run = TargetedMSManager.getRun(Integer.parseInt(name.substring(SAMPLE_FILE_RUN_PREFIX.length())));
+                TargetedMSRun run = TargetedMSManager.getRun(Long.parseLong(name.substring(SAMPLE_FILE_RUN_PREFIX.length())));
                 // If we can't find the run or it's not in the current container, just act like the table doesn't exist
                 if (run != null && run.getContainer().equals(getContainer()))
                 {
@@ -1508,6 +1516,7 @@ public class TargetedMSSchema extends UserSchema
         hs.add(TABLE_QC_METRIC_CONFIGURATION);
         hs.add(TABLE_QC_METRIC_EXCLUSION);
         hs.add(TABLE_QC_ENABLED_METRICS);
+        hs.add(TABLE_QC_TRACE_METRIC_VALUES);
         hs.add(TABLE_SKYLINE_AUDITLOG_ENTRY);
         hs.add(TABLE_SKYLINE_AUDITLOG_MESSAGE);
         hs.add(TABLE_LIST_DEFINITION);

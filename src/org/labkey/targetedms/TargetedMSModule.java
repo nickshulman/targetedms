@@ -22,7 +22,8 @@ import org.labkey.api.audit.AuditLogService;
 import org.labkey.api.data.Container;
 import org.labkey.api.data.ContainerManager;
 import org.labkey.api.data.DbSchema;
-import org.labkey.api.data.DbSchemaType;
+import org.labkey.api.data.PropertySchema;
+import org.labkey.api.data.SQLFragment;
 import org.labkey.api.data.SqlSelector;
 import org.labkey.api.data.UpgradeCode;
 import org.labkey.api.exp.ExperimentRunType;
@@ -43,7 +44,6 @@ import org.labkey.api.settings.AdminConsole;
 import org.labkey.api.targetedms.TargetedMSService;
 import org.labkey.api.usageMetrics.UsageMetricsService;
 import org.labkey.api.util.PageFlowUtil;
-import org.labkey.api.util.UsageReportingLevel;
 import org.labkey.api.view.ActionURL;
 import org.labkey.api.view.BaseWebPartFactory;
 import org.labkey.api.view.JspView;
@@ -62,7 +62,7 @@ import org.labkey.targetedms.pipeline.TargetedMSPipelineProvider;
 import org.labkey.targetedms.query.SkylineListSchema;
 import org.labkey.targetedms.search.ModificationSearchWebPart;
 import org.labkey.targetedms.search.ProteinSearchWebPart;
-import org.labkey.targetedms.view.InstrumentSummaryWebPart;
+import org.labkey.targetedms.view.CalibrationCurveView;
 import org.labkey.targetedms.view.LibraryQueryViewWebPart;
 import org.labkey.targetedms.view.PeptideGroupViewWebPart;
 import org.labkey.targetedms.view.QCSummaryWebPart;
@@ -89,7 +89,6 @@ public class TargetedMSModule extends SpringModule implements ProteomicsModule
     public static final String IMPORT_SKYZIP_PROTOCOL_OBJECT_PREFIX = "TargetedMS.ImportSkyZip";
 
     public static final ExperimentRunType EXP_RUN_TYPE = new TargetedMSExperimentRunType();
-    public static final String TARGETED_MS_INSTRUMENT_SUMMARY = "Instrument Summary";
     public static final String TARGETED_MS_SETUP = "Targeted MS Setup";
     public static final String TARGETED_MS_CHROMATOGRAM_LIBRARY_DOWNLOAD = "Chromatogram Library Download";
     public static final String TARGETED_MS_PRECURSOR_VIEW = "Targeted MS Precursor View";
@@ -104,6 +103,7 @@ public class TargetedMSModule extends SpringModule implements ProteomicsModule
     public static final String TARGETED_MS_QC_PLOTS = "Targeted MS QC Plots";
     public static final String MASS_SPEC_SEARCH_WEBPART = "Mass Spec Search (Tabbed)";
     public static final String TARGETED_MS_PARETO_PLOT = "Targeted MS Pareto Plot";
+    public static final String TARGETED_MS_CALIBRATION_CURVE = "Targeted MS Calibration Curve";
 
     public static final String PEPTIDE_TAB_NAME = "Peptides";
     public static final String PROTEIN_TAB_NAME = "Proteins";
@@ -214,7 +214,7 @@ public class TargetedMSModule extends SpringModule implements ProteomicsModule
     @Override
     public Double getSchemaVersion()
     {
-        return 21.001;
+        return 21.005;
     }
 
     @Override
@@ -415,12 +415,28 @@ public class TargetedMSModule extends SpringModule implements ProteomicsModule
                 }
             },
 
-            new BaseWebPartFactory(TARGETED_MS_INSTRUMENT_SUMMARY)
+            new BaseWebPartFactory(TARGETED_MS_CALIBRATION_CURVE)
             {
                 @Override
                 public WebPartView<?> getWebPartView(@NotNull ViewContext portalCtx, @NotNull Portal.WebPart webPart)
                 {
-                    return new InstrumentSummaryWebPart(portalCtx);
+                    String calCurveIdString = webPart.getPropertyMap().get("calibrationCurveId");
+                    long calCurveId = 0;
+                    if (calCurveIdString != null)
+                    {
+                        try
+                        {
+                            calCurveId = Long.parseLong(calCurveIdString);
+                        }
+                        catch (NumberFormatException ignored) {}
+                    }
+                    return new CalibrationCurveView(portalCtx.getUser(), portalCtx.getContainer(), calCurveId);
+                }
+
+                @Override
+                public boolean isAvailable(Container c, String scope, String location)
+                {
+                    return false;
                 }
             }
         );
@@ -452,10 +468,28 @@ public class TargetedMSModule extends SpringModule implements ProteomicsModule
         UsageMetricsService svc = UsageMetricsService.get();
         if (null != svc)
         {
-            svc.registerUsageMetrics(UsageReportingLevel.MEDIUM, MODULE_NAME, () ->
+            svc.registerUsageMetrics(MODULE_NAME, () ->
             {
                 Map<String, Object> metric = new HashMap<>();
-                metric.put("runCount", new SqlSelector(DbSchema.get("TargetedMS", DbSchemaType.Module), "SELECT COUNT(*) FROM TargetedMS.Runs WHERE Deleted = ?", Boolean.FALSE).getObject(Long.class));
+                DbSchema schema = TargetedMSManager.getSchema();
+                metric.put("runCount", new SqlSelector(schema, "SELECT COUNT(*) FROM TargetedMS.Runs WHERE Deleted = ?", Boolean.FALSE).getObject(Long.class));
+                metric.put("guideSetCount", new SqlSelector(schema, "SELECT COUNT(*) FROM TargetedMS.GuideSet").getObject(Long.class));
+                metric.put("guideSetContainerCount", new SqlSelector(schema, "SELECT COUNT(DISTINCT Container) FROM TargetedMS.GuideSet").getObject(Long.class));
+
+                SQLFragment folderTypeSQL = new SQLFragment("SELECT p.value, COUNT(*) AS FolderCount FROM ");
+                folderTypeSQL.append(PropertySchema.getInstance().getTableInfoProperties(), "p");
+                folderTypeSQL.append(" INNER JOIN ");
+                folderTypeSQL.append(PropertySchema.getInstance().getTableInfoPropertySets(), "ps");
+                folderTypeSQL.append(" ON p.\"set\" = ps.\"set\" WHERE ps.category = 'moduleProperties.TargetedMS' ");
+                folderTypeSQL.append(" AND p.name = ? GROUP BY value");
+                folderTypeSQL.add(FOLDER_TYPE_PROP_NAME);
+
+                Map<String, Long> folderCounts = new HashMap<>();
+                new SqlSelector(PropertySchema.getInstance().getSchema(), folderTypeSQL).forEach(rs ->
+                        folderCounts.put(rs.getString("value"), rs.getLong("FolderCount")));
+
+                metric.put("folderCounts", folderCounts);
+
                 return metric;
             });
         }

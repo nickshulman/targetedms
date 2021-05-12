@@ -261,7 +261,7 @@ public class ComparisonChartMaker
         else
         {
             // X-axis label for the "replicate comparison" graph
-            xLabel = noAnnotation(groupByAnnotation) ? "Replicate" : groupByAnnotation;
+            xLabel = noAnnotation(groupByAnnotation) ? "Replicates" : groupByAnnotation;
         }
 
         JFreeChart chart;
@@ -368,7 +368,7 @@ public class ComparisonChartMaker
             pciPlusList = getPrecursorChromInfo(peptide, precursor, user, container);
         }
 
-        if (pciPlusList == null || pciPlusList.size() == 0)
+        if (pciPlusList.size() == 0)
         {
             return null;
         }

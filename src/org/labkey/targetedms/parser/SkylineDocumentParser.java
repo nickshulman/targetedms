@@ -59,6 +59,7 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -81,6 +82,7 @@ public class SkylineDocumentParser implements AutoCloseable
     private static final String TRANSITION_SETTINGS = "transition_settings";
     private static final String TRANSITION_PREDICTION = "transition_prediction";
     private static final String PREDICT_COLLISION_ENERGY = "predict_collision_energy";
+    private static final String OPTIMIZED_LIBRARY = "optimized_library";
     private static final String REGRESSION_CE = "regression_ce";
     private static final String PREDICT_DECLUSTERING_POTENTIAL = "predict_declustering_potential";
     private static final String TRANSITION_INSTRUMENT = "transition_instrument";
@@ -202,6 +204,8 @@ public class SkylineDocumentParser implements AutoCloseable
     private Map<String, String> _replicateSampleFileIdMap;
     private final List<IrtPeptide> _iRTScaleSettings;
 
+    private final List<OptimizationDBRow> _optimizationDBRows = new LinkedList<>();
+
     private double _matchTolerance = DEFAULT_TOLERANCE;
 
     private final XMLStreamReader _reader;
@@ -276,7 +280,76 @@ public class SkylineDocumentParser implements AutoCloseable
         updateProgress();
 
         parseiRTFile();
+        parseOptDbFiles();
         return parseChromatograms(container, user);
+    }
+
+    @SuppressWarnings("SqlResolve")
+    private void parseOptDbFiles()
+    {
+        for (String optDbPath : _transitionSettings.getPredictionSettings().getOptimizedLibraries().values())
+        {
+            // FileNameUtils.getName() will handle a file path in either Unix or Windows format.
+            String optDbFileName = FilenameUtils.getName(optDbPath);
+            File optDbFile = new File(_file.getParent(), optDbFileName);
+            if (! optDbFile.exists() ) {
+                _log.warn("Input OPTDB database does not exist " + optDbFileName);
+            }
+            else
+            {
+                try
+                {
+                    try (ConnectionSource cs = new ConnectionSource(optDbFile.getAbsolutePath());
+                         Connection conn = cs.getConnection())
+                    {
+                        int schemaVersion;
+                        try (ResultSet rs = conn.createStatement().executeQuery("SELECT * FROM VersionInfo"))
+                        {
+                            if (rs.next())
+                            {
+                                schemaVersion = rs.getInt("SchemaVersion");
+                                if (schemaVersion > 3)
+                                {
+                                    _log.warn("Unsupported OPTDB version: " + schemaVersion + " in OPTDB file " + optDbFile + ", attempting to continue");
+                                }
+                            }
+                            else
+                            {
+                                throw new IllegalStateException("Could not find version info from " + optDbFile);
+                            }
+                        }
+                        try (ResultSet rs = conn.createStatement().executeQuery("SELECT * FROM OptimizationLibrary"))
+                        {
+                            while (rs.next())
+                            {
+                                OptimizationDBRow info = new OptimizationDBRow();
+                                info.setPeptideModSeq(rs.getString("PeptideModSeq"));
+                                info.setCharge(rs.getString("Charge"));
+                                info.setFragmentIon(rs.getString("FragmentIon"));
+                                info.setProductCharge(rs.getString("ProductCharge"));
+                                info.setValue(rs.getDouble("Value"));
+                                info.setType(switch (rs.getInt("Type"))
+                                {
+                                    case 1 -> "ce";
+                                    case 2 -> "dp";
+                                    case 3 -> "rcv";
+                                    case 4 -> "mcv";
+                                    case 5 -> "hcv";
+                                    default -> throw new IllegalArgumentException("Unrecognized optimization type " + rs.getInt("Type") + " in " + optDbFileName);
+                                });
+
+                                _optimizationDBRows.add(info);
+                            }
+                        }
+                    }
+                }
+                catch (SQLException e)
+                {
+                    throw new RuntimeSQLException(e);
+                }
+            }
+
+        }
     }
 
     private void parseiRTFile()
@@ -852,6 +925,10 @@ public class SkylineDocumentParser implements AutoCloseable
             {
                 settings.setDpPredictor(readPredictor(reader, PREDICT_DECLUSTERING_POTENTIAL));
             }
+            else if (XmlUtil.isStartElement(reader, evtType, OPTIMIZED_LIBRARY))
+            {
+                settings.addOptimizedLibrary(reader.getAttributeValue(null, "name"), reader.getAttributeValue(null, "database_path"));
+            }
         }
         return settings;
     }
@@ -1253,6 +1330,11 @@ public class SkylineDocumentParser implements AutoCloseable
         {
             _log.warn("Missed importing " + entry.getValue().intValue() + " chromatograms from sample file " + entry.getKey());
         }
+    }
+
+    public List<OptimizationDBRow> getOptimizationInfos()
+    {
+        return _optimizationDBRows;
     }
 
     public enum MoleculeType
@@ -1947,9 +2029,11 @@ public class SkylineDocumentParser implements AutoCloseable
                     if (!StringUtils.isEmpty(transitionProto.getAnnotations().getNote())) {
                         transition.setNote(transitionProto.getAnnotations().getNote());
                     }
+                    List<TransitionAnnotation> annotations = new ArrayList<>();
                     for (SkylineDocument.SkylineDocumentProto.AnnotationValue transitionValue : transitionProto.getAnnotations().getValuesList()) {
-                        transition.getAnnotations().add(readAnnotationValue(transitionValue, new TransitionAnnotation()));
+                        annotations.add(readAnnotationValue(transitionValue, new TransitionAnnotation()));
                     }
+                    transition.setAnnotations(annotations);
                 }
                 list.add(transition);
             }
@@ -2202,13 +2286,26 @@ public class SkylineDocumentParser implements AutoCloseable
         chromInfo.setQvalue(XmlUtil.readDoubleAttribute(reader, "qvalue"));
         chromInfo.setZscore(XmlUtil.readDoubleAttribute(reader, "zscore"));
         chromInfo.setCcs(XmlUtil.readDoubleAttribute(reader, "ccs"));
-        chromInfo.setDriftTimeMs1(XmlUtil.readDoubleAttribute(reader, "drift_time_ms1"));
-        chromInfo.setDriftTimeFragment(XmlUtil.readDoubleAttribute(reader, "drift_time_fragment"));
-        chromInfo.setDriftTimeWindow(XmlUtil.readDoubleAttribute(reader, "drift_time_window"));
-        chromInfo.setIonMobilityMs1(XmlUtil.readDoubleAttribute(reader, "ion_mobility_ms1"));
-        chromInfo.setIonMobilityFragment(XmlUtil.readDoubleAttribute(reader, "ion_mobility_fragment"));
-        chromInfo.setIonMobilityWindow(XmlUtil.readDoubleAttribute(reader, "ion_mobility_window"));
-        chromInfo.setIonMobilityType(XmlUtil.readAttribute(reader, "ion_mobility_type"));
+
+        // Support old Skyline documents that used "drift time" instead of "ion mobility"
+        Double driftTimeMs1 = XmlUtil.readDoubleAttribute(reader, "drift_time_ms1");
+        Double driftTimeWindow = XmlUtil.readDoubleAttribute(reader, "drift_time_window");
+        Double driftTimeFragment = XmlUtil.readDoubleAttribute(reader, "drift_time_fragment");
+
+        if (driftTimeMs1 != null || driftTimeWindow != null || driftTimeFragment != null)
+        {
+            chromInfo.setIonMobilityMs1(driftTimeMs1);
+            chromInfo.setIonMobilityFragment(driftTimeFragment);
+            chromInfo.setIonMobilityWindow(driftTimeWindow);
+            chromInfo.setIonMobilityType("drift_time_ms");
+        }
+        else
+        {
+            chromInfo.setIonMobilityMs1(XmlUtil.readDoubleAttribute(reader, "ion_mobility_ms1"));
+            chromInfo.setIonMobilityFragment(XmlUtil.readDoubleAttribute(reader, "ion_mobility_fragment"));
+            chromInfo.setIonMobilityWindow(XmlUtil.readDoubleAttribute(reader, "ion_mobility_window"));
+            chromInfo.setIonMobilityType(XmlUtil.readAttribute(reader, "ion_mobility_type"));
+        }
 
         while(reader.hasNext())
         {
@@ -2615,11 +2712,23 @@ public class SkylineDocumentParser implements AutoCloseable
         chromInfo.setUserSet(XmlUtil.readAttribute(reader, "user_set"));
         chromInfo.setPointsAcrossPeak(XmlUtil.readIntegerAttribute(reader, "points_across", null));
         chromInfo.setCcs(XmlUtil.readDoubleAttribute(reader, "ccs"));
-        chromInfo.setDriftTime(XmlUtil.readDoubleAttribute(reader, "drift_time"));
-        chromInfo.setDriftTimeWindow(XmlUtil.readDoubleAttribute(reader, "drift_time_window"));
-        chromInfo.setIonMobility(XmlUtil.readDoubleAttribute(reader, "ion_mobility"));
-        chromInfo.setIonMobilityWindow(XmlUtil.readDoubleAttribute(reader, "ion_mobility_window"));
-        chromInfo.setIonMobilityType(XmlUtil.readAttribute(reader, "ion_mobility_type"));
+
+        Double driftTime = XmlUtil.readDoubleAttribute(reader, "drift_time");
+        Double driftTimeWindow = XmlUtil.readDoubleAttribute(reader, "drift_time_window");
+        if (driftTime != null || driftTimeWindow != null)
+        {
+            // Support old Skyline documents
+            chromInfo.setIonMobility(driftTime);
+            chromInfo.setIonMobilityWindow(driftTimeWindow);
+            chromInfo.setIonMobilityType("drift_time_ms");
+        }
+        else
+        {
+            chromInfo.setIonMobility(XmlUtil.readDoubleAttribute(reader, "ion_mobility"));
+            chromInfo.setIonMobilityWindow(XmlUtil.readDoubleAttribute(reader, "ion_mobility_window"));
+            chromInfo.setIonMobilityType(XmlUtil.readAttribute(reader, "ion_mobility_type"));
+        }
+
         chromInfo.setRank(XmlUtil.readIntegerAttribute(reader, "rank"));
         chromInfo.setRankByLevel(XmlUtil.readIntegerAttribute(reader, "rank_by_level"));
         chromInfo.setForcedIntegration(XmlUtil.readBooleanAttribute(reader, "forced_integration"));
@@ -2690,9 +2799,7 @@ public class SkylineDocumentParser implements AutoCloseable
             chromInfo.setArea((double) transitionPeak.getArea());
             chromInfo.setBackground((double) transitionPeak.getBackgroundArea());
             chromInfo.setHeight((double) transitionPeak.getHeight());
-            if (null != transitionPeak.getMassError()) {
-                chromInfo.setMassErrorPPM((double) transitionPeak.getMassError().getValue());
-            }
+            chromInfo.setMassErrorPPM((double) transitionPeak.getMassError().getValue());
             chromInfo.setFwhm((double) transitionPeak.getFwhm());
             chromInfo.setFwhmDegenerate(transitionPeak.getIsFwhmDegenerate());
             chromInfo.setTruncated(fromOptional(transitionPeak.getTruncated()));
@@ -2700,13 +2807,11 @@ public class SkylineDocumentParser implements AutoCloseable
             chromInfo.setPeakRank(transitionPeak.getRank());
             chromInfo.setUserSet(userSetToString(transitionPeak.getUserSet()));
             chromInfo.setPointsAcrossPeak(fromOptional(transitionPeak.getPointsAcrossPeak()));
-            if (null != transitionPeak.getAnnotations()) {
-                if (!StringUtils.isEmpty(transitionPeak.getAnnotations().getNote())) {
-                    chromInfo.setNote(transitionPeak.getAnnotations().getNote());
-                }
-                for (SkylineDocument.SkylineDocumentProto.AnnotationValue annotationValue : transitionPeak.getAnnotations().getValuesList()) {
-                    annotations.add(readAnnotationValue(annotationValue, new TransitionChromInfoAnnotation()));
-                }
+            if (!StringUtils.isEmpty(transitionPeak.getAnnotations().getNote())) {
+                chromInfo.setNote(transitionPeak.getAnnotations().getNote());
+            }
+            for (SkylineDocument.SkylineDocumentProto.AnnotationValue annotationValue : transitionPeak.getAnnotations().getValuesList()) {
+                annotations.add(readAnnotationValue(annotationValue, new TransitionChromInfoAnnotation()));
             }
 
             for(String missingAnotName: _dataSettings.getMissingBooleanAnnotations(annotations,
@@ -2744,15 +2849,13 @@ public class SkylineDocumentParser implements AutoCloseable
     }
 
     private static Boolean fromOptional(SkylineDocument.SkylineDocumentProto.OptionalBool optionalBool) {
-        switch (optionalBool) {
-            case OPTIONAL_BOOL_MISSING:
-                return null;
-            case OPTIONAL_BOOL_TRUE:
-                return true;
-            case OPTIONAL_BOOL_FALSE:
-                return false;
-        }
-        return null;
+        return switch (optionalBool)
+                {
+                    case OPTIONAL_BOOL_MISSING -> null;
+                    case OPTIONAL_BOOL_TRUE -> true;
+                    case OPTIONAL_BOOL_FALSE -> false;
+                    default -> null;
+                };
     }
 
     private static Integer fromOptional(SkylineDocument.SkylineDocumentProto.OptionalInt optionalInt) {
@@ -2772,53 +2875,40 @@ public class SkylineDocumentParser implements AutoCloseable
     }
 
     private static String peakIdentificationToString(SkylineDocument.SkylineDocumentProto.PeakIdentification peakIdentification) {
-        switch (peakIdentification) {
-            case PEAK_IDENTIFICATION_ALIGNED:
-                return "ALIGNED";
-            case PEAK_IDENTIFICATION_TRUE:
-                return "TRUE";
-            case PEAK_IDENTIFICATION_FALSE:
-                return "FALSE";
-        }
-        return null;
+        return switch (peakIdentification)
+                {
+                    case PEAK_IDENTIFICATION_ALIGNED -> "ALIGNED";
+                    case PEAK_IDENTIFICATION_TRUE -> "TRUE";
+                    case PEAK_IDENTIFICATION_FALSE -> "FALSE";
+                    default -> null;
+                };
     }
 
     private static String ionTypeToString(SkylineDocument.SkylineDocumentProto.IonType ionType) {
-        switch (ionType) {
-            case ION_TYPE_a:
-                return "a";
-            case ION_TYPE_b:
-                return "b";
-            case ION_TYPE_c:
-                return "c";
-            case ION_TYPE_x:
-                return "x";
-            case ION_TYPE_y:
-                return "y";
-            case ION_TYPE_z:
-                return "z";
-            case ION_TYPE_precursor:
-                return "precursor";
-            case ION_TYPE_custom:
-                return "custom";
-        }
-        return null;
+        return switch (ionType)
+                {
+                    case ION_TYPE_a -> "a";
+                    case ION_TYPE_b -> "b";
+                    case ION_TYPE_c -> "c";
+                    case ION_TYPE_x -> "x";
+                    case ION_TYPE_y -> "y";
+                    case ION_TYPE_z -> "z";
+                    case ION_TYPE_precursor -> "precursor";
+                    case ION_TYPE_custom -> "custom";
+                    default -> null;
+                };
     }
 
     private static String userSetToString(SkylineDocument.SkylineDocumentProto.UserSet userSet) {
-        switch (userSet) {
-            case USER_SET_TRUE:
-                return "TRUE";
-            case USER_SET_FALSE:
-                return "FALSE";
-            case USER_SET_IMPORTED:
-                return "IMPORTED";
-            case USER_SET_REINTEGRATED:
-                return "REINTEGRATED";
-            case USER_SET_MATCHED:
-                return "MATCHED";
-        }
-        return null;
+        return switch (userSet)
+                {
+                    case USER_SET_TRUE -> "TRUE";
+                    case USER_SET_FALSE -> "FALSE";
+                    case USER_SET_IMPORTED -> "IMPORTED";
+                    case USER_SET_REINTEGRATED -> "REINTEGRATED";
+                    case USER_SET_MATCHED -> "MATCHED";
+                    default -> null;
+                };
     }
 
     private int findEntry(SignedMz precursorMz, double tolerance, ChromGroupHeaderInfo[] chromatograms, int left, int right)

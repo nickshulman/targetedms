@@ -33,7 +33,7 @@ class Constants
     public static final String CHROM_LIB_FILE_NAME = "chromlib";
     public static final String CHROM_LIB_FILE_EXT = "clib";
 
-    public static final String SCHEMA_VERSION = "2.0";
+    public static final String SCHEMA_VERSION = "3.0";
 
     public enum Table
     {
@@ -54,14 +54,6 @@ class Constants
         Transition,
         TransitionOptimization,
 
-        // Small molecule
-        MoleculeList,
-        Molecule,
-        MoleculePrecursor,
-        MoleculePrecursorRetentionTime,
-        MoleculeTransition,
-        MoleculeTransitionOptimization,
-
         IrtLibrary
     }
 
@@ -78,8 +70,6 @@ class Constants
         Peptides("INTEGER NOT NULL"),
         Precursors("INTEGER NOT NULL"),
         Transitions("INTEGER NOT NULL"),
-        MoleculeLists("INTEGER NOT NULL"),
-        Molecules("INTEGER NOT NULL"),
 
         FilePath("VARCHAR(500) NOT NULL"),
         SampleName("VARCHAR(300) NOT NULL"),
@@ -118,11 +108,11 @@ class Constants
         EndIndex("INTEGER"),
         PreviousAa("CHAR(1)"),
         NextAa("CHAR(1)"),
-        CalcNeutralMass("DOUBLE NOT NULL"),
-        NumMissedCleavages("INTEGER NOT NULL"),
+        CalcNeutralMass("DOUBLE"),
+        NumMissedCleavages("INTEGER"),
 
-        IonFormula("VARCHAR(100)"),
-        CustomIonName("VARCHAR(100)"),
+        ChemicalFormula("VARCHAR(100)"),
+        MoleculeName("VARCHAR(100)"),
         MassMonoisotopic("DOUBLE"),
         MassAverage("DOUBLE"),
 
@@ -130,14 +120,12 @@ class Constants
         IndexAa("INTEGER NOT NULL"),
         MassDiff("DOUBLE NOT NULL"),
 
-        MoleculeListId("INTEGER", Table.MoleculeList, Id),
-        MoleculeId("INTEGER NOT NULL", Table.Molecule, Id),
         MoleculeAccession("VARCHAR(500)"),
 
         Mz,
         Charge,
         NeutralMass,
-        ModifiedSequence("TEXT NOT NULL"),
+        ModifiedSequence("TEXT"),
         CollisionEnergy("DOUBLE"),
         DeclusteringPotential("DOUBLE"),
         TotalArea("DOUBLE"),
@@ -147,6 +135,7 @@ class Constants
         Chromatogram("BLOB"),
         UncompressedSize("INTEGER"),
         ChromatogramFormat("INTEGER"),
+        Adduct("VARCHAR(200)"),
         ExplicitIonMobility("DOUBLE"),
         CCS("DOUBLE"),
         IonMobilityMS1("DOUBLE"),
@@ -156,15 +145,9 @@ class Constants
         ExplicitIonMobilityUnits("VARCHAR(200)"),
         ExplicitCcsSqa("DOUBLE"),
         ExplicitCompensationVoltage("DOUBLE"),
-        PrecursorConcentration("DOUBLE"),
-        DriftTimeMs1("DOUBLE"),
-        DriftTimeFragment("DOUBLE"),
-        DriftTimeWindow("DOUBLE"),
 
         PrecursorId("INTEGER NOT NULL", Table.Precursor, Id),
         IsotopeModId("INTEGER NOT NULL", Table.IsotopeModification, Id),
-
-        MoleculePrecursorId("INTEGER NOT NULL", Table.MoleculePrecursor, Id),
 
         SampleFileId("INTEGER", Table.SampleFile, Id),
         RetentionTime("DOUBLE"),
@@ -180,6 +163,7 @@ class Constants
         Fwhm("DOUBLE"),
         MassErrorPPM("DOUBLE"),
         ChromatogramIndex("INTEGER"),
+        FragmentName("VARCHAR(100)"),
 
         IrtLibraryId("INTEGER NOT NULL", Table.IrtLibrary, Id),
         PeptideModSeq("TEXT NOT NULL"),
@@ -247,9 +231,7 @@ class Constants
         Proteins(Column.Proteins),
         Peptides(Column.Peptides),
         Precursors(Column.Precursors),
-        Transitions(Column.Transitions),
-        MoleculeLists(Column.MoleculeLists),
-        Molecules(Column.Molecules);
+        Transitions(Column.Transitions);
 
         private final Column _column;
 
@@ -448,38 +430,6 @@ class Constants
         }
     }
 
-    public enum MoleculeListColumn implements ColumnDef
-    {
-        Id(Column.Id),
-        Name(Column.Name, "VARCHAR(250) NOT NULL"),
-        Description(Column.Description);
-
-        private final Column _column;
-        private final String _definition;
-
-        MoleculeListColumn(Column column)
-        {
-            _column = column;
-            _definition = column.definition;
-        }
-        MoleculeListColumn(Column column, String definition)
-        {
-            _column = column;
-            _definition = definition;
-        }
-        @Override
-        public Column baseColumn()
-        {
-            return _column;
-        }
-
-        @Override
-        public String definition()
-        {
-            return _definition;
-        }
-    }
-
     public enum PeptideColumn implements ColumnDef
     {
         Id(Column.Id),
@@ -490,7 +440,13 @@ class Constants
         PreviousAa(Column.PreviousAa),
         NextAa(Column.NextAa),
         CalcNeutralMass(Column.CalcNeutralMass),
-        NumMissedCleavages(Column.NumMissedCleavages);
+        NumMissedCleavages(Column.NumMissedCleavages),
+
+        ChemicalFormula(Column.ChemicalFormula),
+        MoleculeName(Column.MoleculeName),
+        MassMonoisotopic(Column.MassMonoisotopic),
+        MassAverage(Column.MassAverage),
+        MoleculeAccession(Column.MoleculeAccession);
 
         private final Column _column;
         private final String _definition;
@@ -554,7 +510,7 @@ class Constants
         IsotopeLabel(Column.IsotopeLabel),
         Mz(Column.Mz, "DOUBLE NOT NULL"),
         Charge(Column.Charge, "INTEGER NOT NULL"),
-        NeutralMass(Column.NeutralMass, "DOUBLE NOT NULL"),
+        NeutralMass(Column.NeutralMass, "DOUBLE"),
         ModifiedSequence(Column.ModifiedSequence),
         CollisionEnergy(Column.CollisionEnergy),
         DeclusteringPotential(Column.DeclusteringPotential),
@@ -575,10 +531,8 @@ class Constants
         ExplicitIonMobilityUnits(Column.ExplicitIonMobilityUnits),
         ExplicitCcsSqa(Column.ExplicitCcsSqa),
         ExplicitCompensationVoltage(Column.ExplicitCompensationVoltage),
-        PrecursorConcentration(Column.PrecursorConcentration),
-        DriftTimeMs1(Column.DriftTimeMs1),
-        DriftTimeFragment(Column.DriftTimeFragment),
-        DriftTimeWindow(Column.DriftTimeWindow);
+
+        Adduct(Column.Adduct);
 
         private final Column _column;
         private final String _definition;
@@ -679,7 +633,11 @@ class Constants
         Height(Column.Height),
         Fwhm(Column.Fwhm),
         MassErrorPPM(Column.MassErrorPPM),
-        ChromatogramIndex(Column.ChromatogramIndex);
+        ChromatogramIndex(Column.ChromatogramIndex),
+
+        FragmentName(Column.FragmentName),
+        ChemicalFormula(Column.ChemicalFormula),
+        Adduct(Column.Adduct);
 
         private final Column _column;
         private final String _definition;
@@ -694,170 +652,6 @@ class Constants
             _column = column;
             _definition = definition;
         }
-        @Override
-        public Column baseColumn()
-        {
-            return _column;
-        }
-        @Override
-        public String definition()
-        {
-            return _definition;
-        }
-    }
-
-    public enum MoleculeColumn implements ColumnDef
-    {
-        Id(Column.Id),
-        MoleculeListId(Column.MoleculeListId),
-        IonFormula(Column.IonFormula),
-        CustomIonName(Column.CustomIonName),
-        MassMonoisotopic(Column.MassMonoisotopic),
-        MassAverage(Column.MassAverage),
-        MoleculeAccession(Column.MoleculeAccession);
-
-        private final Column _column;
-        private final String _definition;
-
-        MoleculeColumn(Column column)
-        {
-            _column = column;
-            _definition = column.definition;
-        }
-        @Override
-        public Column baseColumn()
-        {
-            return _column;
-        }
-
-        @Override
-        public String definition()
-        {
-            return _definition;
-        }
-    }
-
-    public enum MoleculePrecursorColumn implements ColumnDef
-    {
-        Id(Column.Id),
-        MoleculeId(Column.MoleculeId),
-        IsotopeLabel(Column.IsotopeLabel),
-        Mz(Column.Mz, "DOUBLE NOT NULL"),
-        Charge(Column.Charge, "INTEGER NOT NULL"),
-        CollisionEnergy(Column.CollisionEnergy),
-        DeclusteringPotential(Column.DeclusteringPotential),
-        TotalArea(Column.TotalArea),
-        NumTransitions(Column.NumTransitions),
-        NumPoints(Column.NumPoints),
-        AverageMassErrorPPM(Column.AverageMassErrorPPM),
-        SampleFileId(Column.SampleFileId),
-        Chromatogram(Column.Chromatogram),
-        UncompressedSize(Column.UncompressedSize),
-        ChromatogramFormat(Column.ChromatogramFormat),
-        MassMonoisotopic(Column.MassMonoisotopic),
-        MassAverage(Column.MassAverage),
-        IonFormula(Column.IonFormula),
-        CustomIonName(Column.CustomIonName),
-        ExplicitIonMobility(Column.ExplicitIonMobility),
-        CCS(Column.CCS),
-        IonMobilityMS1(Column.IonMobilityMS1),
-        IonMobilityFragment(Column.IonMobilityFragment),
-        IonMobilityWindow(Column.IonMobilityWindow),
-        IonMobilityType(Column.IonMobilityType),
-        ExplicitIonMobilityUnits(Column.ExplicitIonMobilityUnits),
-        ExplicitCcsSqa(Column.ExplicitCcsSqa),
-        ExplicitCompensationVoltage(Column.ExplicitCompensationVoltage),
-        PrecursorConcentration(Column.PrecursorConcentration),
-        DriftTimeMs1(Column.DriftTimeMs1),
-        DriftTimeFragment(Column.DriftTimeFragment),
-        DriftTimeWindow(Column.DriftTimeWindow);
-
-        private final Column _column;
-        private final String _definition;
-
-        MoleculePrecursorColumn(Column column)
-        {
-            _column = column;
-            _definition = column.definition;
-        }
-
-        MoleculePrecursorColumn(Column column, String definition)
-        {
-            _column = column;
-            _definition = definition;
-        }
-        @Override
-        public Column baseColumn()
-        {
-            return _column;
-        }
-
-        @Override
-        public String definition()
-        {
-            return _definition;
-        }
-    }
-
-    public enum MoleculePrecursorRetentionTimeColumn implements ColumnDef
-    {
-        Id(Column.Id),
-        MoleculePrecursorId(Column.MoleculePrecursorId),
-        SampleFileId(Column.SampleFileId),
-        RetentionTime(Column.RetentionTime),
-        StartTime(Column.StartTime),
-        EndTime(Column.EndTime),
-        OptimizationStep(Column.OptimizationStep);
-
-        private final Column _column;
-
-        MoleculePrecursorRetentionTimeColumn(Column column)
-        {
-            _column = column;
-        }
-
-        @Override
-        public Column baseColumn()
-        {
-            return _column;
-        }
-
-        @Override
-        public String definition()
-        {
-            return _column.definition;
-        }
-    }
-
-    public enum MoleculeTransitionColumn implements ColumnDef
-    {
-        Id(Column.Id),
-        MoleculePrecursorId(Column.MoleculePrecursorId),
-        Mz(Column.Mz, "DOUBLE"),
-        Charge(Column.Charge, "INTEGER"),
-        FragmentType(Column.FragmentType),
-        MassIndex(Column.MassIndex),
-        Area(Column.Area),
-        Height(Column.Height),
-        Fwhm(Column.Fwhm),
-        MassErrorPPM(Column.MassErrorPPM),
-        ChromatogramIndex(Column.ChromatogramIndex);
-
-        private final Column _column;
-        private final String _definition;
-
-        MoleculeTransitionColumn(Column column)
-        {
-            _column = column;
-            _definition = column.definition;
-        }
-
-        MoleculeTransitionColumn(Column column, String definition)
-        {
-            _column = column;
-            _definition = definition;
-        }
-
         @Override
         public Column baseColumn()
         {
@@ -915,36 +709,6 @@ class Constants
             _column = column;
             _definition = column.definition;
         }
-
-        @Override
-        public Column baseColumn()
-        {
-            return _column;
-        }
-
-        @Override
-        public String definition()
-        {
-            return _definition;
-        }
-    }
-
-    public enum MoleculeTransitionOptimizationColumn implements ColumnDef
-    {
-        Id(Column.Id),
-        TransitionId(Column.TransitionId),
-        OptimizationType(Column.OptimizationType),
-        OptimizationValue(Column.OptimizationValue);
-
-        private final Column _column;
-        private final String _definition;
-
-        MoleculeTransitionOptimizationColumn(Column column)
-        {
-            _column = column;
-            _definition = column.definition;
-        }
-
 
         @Override
         public Column baseColumn()

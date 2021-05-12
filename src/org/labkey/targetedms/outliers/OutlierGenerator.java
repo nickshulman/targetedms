@@ -16,6 +16,7 @@
 package org.labkey.targetedms.outliers;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.logging.log4j.LogManager;
 import org.labkey.api.data.Container;
 import org.labkey.api.data.SQLFragment;
 import org.labkey.api.data.Sort;
@@ -53,45 +54,76 @@ public class OutlierGenerator
         return INSTANCE;
     }
 
-    private String getEachSeriesTypePlotDataSql(int seriesIndex, int id, String schemaName, String queryName, List<AnnotationGroup> annotationGroups)
+    private String getEachSeriesTypePlotDataSql(int seriesIndex, QCMetricConfiguration configuration, List<AnnotationGroup> annotationGroups)
     {
-        StringBuilder sql = new StringBuilder("(SELECT PrecursorChromInfoId, SampleFileId, SampleFileId.FilePath, SampleFileId.ReplicateId.Id AS ReplicateId ,");
-        sql.append(" CAST(IFDEFINED(SeriesLabel) AS VARCHAR) AS SeriesLabel, ");
-        sql.append("\nMetricValue, ").append(seriesIndex).append(" AS MetricSeriesIndex, ").append(id).append(" AS MetricId");
-        sql.append("\n FROM ").append(schemaName).append('.').append(queryName);
-        if (!annotationGroups.isEmpty())
+        String schemaName;
+        String queryName;
+        if (seriesIndex == 1)
         {
-            sql.append(" WHERE ");
-            StringBuilder filterClause = new StringBuilder("SampleFileId.ReplicateId IN (");
-            var intersect = "";
-            var selectSql = "(SELECT ReplicateId FROM targetedms.ReplicateAnnotation WHERE ";
-            for (AnnotationGroup annotation : annotationGroups)
-            {
-                filterClause.append(intersect)
-                        .append(selectSql)
-                        .append(" Name='")
-                        .append(annotation.getName().replace("'", "''"))
-                        .append("'");
-
-
-                var annotationValues = annotation.getValues();
-                if (!annotationValues.isEmpty())
-                {
-                    var quoteEscapedVals = annotationValues.stream().map(s -> s.replace("'", "''")).collect(Collectors.toList());
-                    var vals = "'" + StringUtils.join(quoteEscapedVals, "','") + "'";
-                    filterClause.append(" AND  Value IN (").append(vals).append(" )");
-                }
-                filterClause.append(" ) ");
-                intersect = " INTERSECT ";
-            }
-            filterClause.append(") ");
-            sql.append(filterClause.toString());
+            schemaName = configuration.getSeries1SchemaName();
+            queryName = configuration.getSeries1QueryName();
         }
-        sql.append(")");
+        else
+        {
+            schemaName = configuration.getSeries2SchemaName();
+            queryName = configuration.getSeries2QueryName();
+        }
+        StringBuilder sql = new StringBuilder();
+
+        // handle trace metrics
+        if (configuration.getTraceName() != null)
+        {
+            sql.append("(SELECT 0 AS PrecursorChromInfoId, SampleFileId, SampleFileId.FilePath, SampleFileId.ReplicateId.Id AS ReplicateId ,");
+            sql.append(" metric.Name AS SeriesLabel, ");
+            sql.append("\nvalue as MetricValue, metric, ").append(seriesIndex).append(" AS MetricSeriesIndex, ").append(configuration.getId()).append(" AS MetricId");
+            sql.append("\n FROM ").append(schemaName).append('.').append(TargetedMSManager.getTableQCTraceMetricValues().getName());
+            sql.append(" WHERE metric = ").append(configuration.getId());
+            sql.append(")");
+        }
+        else
+        {
+            sql.append("(SELECT PrecursorChromInfoId, SampleFileId, SampleFileId.FilePath, SampleFileId.ReplicateId.Id AS ReplicateId ,");
+            sql.append(" CAST(IFDEFINED(SeriesLabel) AS VARCHAR) AS SeriesLabel, ");
+            sql.append("\nMetricValue, 0 as metric, ").append(seriesIndex).append(" AS MetricSeriesIndex, ").append(configuration.getId()).append(" AS MetricId");
+            sql.append("\n FROM ").append(schemaName).append('.').append(queryName);
+            if (!annotationGroups.isEmpty())
+            {
+                sql.append(" WHERE ");
+                StringBuilder filterClause = new StringBuilder("SampleFileId.ReplicateId IN (");
+                var intersect = "";
+                var selectSql = "(SELECT ReplicateId FROM targetedms.ReplicateAnnotation WHERE ";
+                for (AnnotationGroup annotation : annotationGroups)
+                {
+                    filterClause.append(intersect)
+                            .append(selectSql)
+                            .append(" Name='")
+                            .append(annotation.getName().replace("'", "''"))
+                            .append("'");
+
+
+                    var annotationValues = annotation.getValues();
+                    if (!annotationValues.isEmpty())
+                    {
+                        var quoteEscapedVals = annotationValues.stream().map(s -> s.replace("'", "''")).collect(Collectors.toList());
+                        var vals = "'" + StringUtils.join(quoteEscapedVals, "','") + "'";
+                        filterClause.append(" AND  Value IN (").append(vals).append(" )");
+                    }
+                    filterClause.append(" ) ");
+                    intersect = " INTERSECT ";
+                }
+                filterClause.append(") ");
+                sql.append(filterClause.toString());
+            }
+            if (configuration.getTraceName() != null)
+            {
+                sql.append(" WHERE metric = ").append(configuration.getId());
+            }
+            sql.append(")");
+        }
         return sql.toString();
     }
 
-    private String queryContainerSampleFileRawData(List<QCMetricConfiguration> configurations, Date startDate, Date endDate, List<AnnotationGroup> annotationGroups)
+    private String queryContainerSampleFileRawData(List<QCMetricConfiguration> configurations, Date startDate, Date endDate, List<AnnotationGroup> annotationGroups, boolean showExcluded)
     {
         StringBuilder sql = new StringBuilder();
 
@@ -123,17 +155,11 @@ public class OutlierGenerator
         String sep = "";
         for (QCMetricConfiguration configuration : configurations)
         {
-            int id = configuration.getId();
-            String schema1Name = configuration.getSeries1SchemaName();
-            String query1Name = configuration.getSeries1QueryName();
-            sql.append(sep).append(getEachSeriesTypePlotDataSql(1, id, schema1Name, query1Name, annotationGroups));
+            sql.append(sep).append(getEachSeriesTypePlotDataSql(1, configuration, annotationGroups));
             sep = "\nUNION\n";
-
             if (configuration.getSeries2SchemaName() != null && configuration.getSeries2QueryName() != null)
             {
-                String schema2Name = configuration.getSeries2SchemaName();
-                String query2Name = configuration.getSeries2QueryName();
-                sql.append(sep).append(getEachSeriesTypePlotDataSql(2, id, schema2Name, query2Name, annotationGroups));
+                sql.append(sep).append(getEachSeriesTypePlotDataSql(2, configuration, annotationGroups));
             }
         }
 
@@ -169,13 +195,17 @@ public class OutlierGenerator
         {
             sql.append("\nWHERE sf.AcquiredTime IS NOT NULL");
         }
+        if (!showExcluded)
+        {
+            sql.append(" AND sf.Excluded = false");
+        }
 
         return sql.toString();
     }
 
-    public List<RawMetricDataSet> getRawMetricDataSets(Container container, User user, List<QCMetricConfiguration> configurations, Date startDate, Date endDate, List<AnnotationGroup> annotationGroups)
+    public List<RawMetricDataSet> getRawMetricDataSets(Container container, User user, List<QCMetricConfiguration> configurations, Date startDate, Date endDate, List<AnnotationGroup> annotationGroups, boolean showExcluded)
     {
-        String labkeySQL = queryContainerSampleFileRawData(configurations, startDate, endDate, annotationGroups);
+        String labkeySQL = queryContainerSampleFileRawData(configurations, startDate, endDate, annotationGroups, showExcluded);
 
         return QueryService.get().selector(
                 new TargetedMSSchema(user, container),
@@ -242,19 +272,12 @@ public class OutlierGenerator
     public String getMetricLabel(Map<Integer, QCMetricConfiguration> metrics, RawMetricDataSet dataRow)
     {
         QCMetricConfiguration metric = metrics.get(dataRow.getMetricId());
-        String metricLabel;
-        switch (dataRow.getMetricSeriesIndex())
-        {
-            case 1:
-                metricLabel = metric.getSeries1Label();
-                break;
-            case 2:
-                metricLabel = metric.getSeries2Label();
-                break;
-            default:
-                throw new IllegalArgumentException("Unexpected metric series index: " + dataRow.getMetricSeriesIndex());
-        }
-        return metricLabel;
+        return switch (dataRow.getMetricSeriesIndex())
+                {
+                    case 1 -> metric.getSeries1Label();
+                    case 2 -> metric.getSeries2Label();
+                    default -> throw new IllegalArgumentException("Unexpected metric series index: " + dataRow.getMetricSeriesIndex());
+                };
     }
     /**
      * returns the separated plots data per peptide
