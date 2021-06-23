@@ -48,6 +48,8 @@ public class PrecursorChromInfo extends AbstractChromInfo
     private Double _maxEndTime;
     private Double _totalArea;
     private Double _totalBackground;
+    private Double _totalAreaFragment;
+    private Double _totalAreaMS1;
     private Double _maxFwhm;
     private Double _maxHeight;
     private Double _averageMassErrorPPM;
@@ -151,6 +153,26 @@ public class PrecursorChromInfo extends AbstractChromInfo
     public void setTotalBackground(Double totalBackground)
     {
         _totalBackground = totalBackground;
+    }
+
+    public Double getTotalAreaFragment()
+    {
+        return _totalAreaFragment;
+    }
+
+    public void setTotalAreaFragment(Double totalAreaFragment)
+    {
+        _totalAreaFragment = totalAreaFragment;
+    }
+
+    public Double getTotalAreaMS1()
+    {
+        return _totalAreaMS1;
+    }
+
+    public void setTotalAreaMS1(Double totalAreaMS1)
+    {
+        _totalAreaMS1 = totalAreaMS1;
     }
 
     public Double getMaxFwhm()
