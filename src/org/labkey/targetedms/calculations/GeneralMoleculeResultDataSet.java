@@ -168,7 +168,7 @@ public class GeneralMoleculeResultDataSet
                 }
 
                 addChromInfoRecord(new ChromInfoRecord(precursorKey, replicate, isotopeLabel, 1,
-                    precursorChromInfo.getTotalAreaMS1(), precursorChromInfo.getSampleFileId()));
+                    precursorChromInfo.getTotalAreaMs1(), precursorChromInfo.getSampleFileId()));
                 addChromInfoRecord(new ChromInfoRecord(precursorKey, replicate, isotopeLabel, 2,
                     precursorChromInfo.getTotalAreaFragment(), precursorChromInfo.getSampleFileId()));
             }

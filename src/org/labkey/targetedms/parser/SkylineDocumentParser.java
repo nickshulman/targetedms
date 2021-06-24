@@ -1854,7 +1854,7 @@ public class SkylineDocumentParser implements AutoCloseable
                 }
                 pci.setBestMassErrorPPM(bestMassError);
             }
-            pci.setTotalAreaMS1(ms1AreaCount == ms1TransitionCount ? totalAreaMs1 : null);
+            pci.setTotalAreaMs1(ms1AreaCount == ms1TransitionCount ? totalAreaMs1 : null);
             pci.setTotalAreaFragment(fragmentAreaCount == fragmentTransitionCount ? totalAreaFragment : null);
         }
     }

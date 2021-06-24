@@ -2049,7 +2049,7 @@ public class SkylineDocImporter
         try
         {
             _precursorChromInfoStmt = ensureStatement(_precursorChromInfoStmt,
-                    "INSERT INTO targetedms.precursorchrominfo( precursorid, samplefileid, generalmoleculechrominfoid, bestretentiontime, minstarttime, maxendtime, totalarea, totalbackground, maxfwhm, peakcountratio, numtruncated, librarydotp, optimizationstep, note, chromatogram, numtransitions, numpoints, maxheight, isotopedotp, averagemasserrorppm, bestmasserrorppm, userset, uncompressedsize, identified, container, chromatogramformat, chromatogramoffset, chromatogramlength, qvalue, zscore, ccs, ionmobilityms1, ionmobilityfragment, ionmobilitywindow, ionmobilitytype) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO targetedms.precursorchrominfo( precursorid, samplefileid, generalmoleculechrominfoid, bestretentiontime, minstarttime, maxendtime, totalarea, totalbackground, maxfwhm, peakcountratio, numtruncated, librarydotp, optimizationstep, note, chromatogram, numtransitions, numpoints, maxheight, isotopedotp, averagemasserrorppm, bestmasserrorppm, userset, uncompressedsize, identified, container, chromatogramformat, chromatogramoffset, chromatogramlength, qvalue, zscore, ccs, ionmobilityms1, ionmobilityfragment, ionmobilitywindow, ionmobilitytype, totalAreaMs1, totalAreaFragment) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     true);
 
             int index = 1;
@@ -2088,6 +2088,8 @@ public class SkylineDocImporter
             setDouble(_precursorChromInfoStmt, index++, preChromInfo.getIonMobilityFragment());
             setDouble(_precursorChromInfoStmt, index++, preChromInfo.getIonMobilityWindow());
             _precursorChromInfoStmt.setString(index++, preChromInfo.getIonMobilityType());
+            setDouble(_precursorChromInfoStmt, index++, preChromInfo.getTotalAreaMs1());
+            setDouble(_precursorChromInfoStmt, index++, preChromInfo.getTotalAreaFragment());
 
             try (ResultSet rs = TargetedMSManager.getSqlDialect().executeWithResults(_precursorChromInfoStmt))
             {
