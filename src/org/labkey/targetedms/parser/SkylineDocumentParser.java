@@ -59,7 +59,6 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -188,8 +187,8 @@ public class SkylineDocumentParser implements AutoCloseable
      * has more than 100,000 AND has more than 1,000 precursors. We use both because a document may have a lot of
      * replicates, so the TransitionChromInfo count by itself isn't sufficient to do the desired screening
      */
-    public static final int MAX_TRANSITION_CHROM_INFOS = 100_000;
-    public static final int MAX_PRECURSORS = 1_000;
+    private int _maxTransitionChromInfos;
+    private int _maxPrecursors;
 
     /** Null if we haven't found a SKYD to parse */
     @Nullable
@@ -239,13 +238,32 @@ public class SkylineDocumentParser implements AutoCloseable
         _log = log;
         _iRTScaleSettings = new ArrayList<>();
         readDocumentVersion(_reader);
+
+        try
+        {
+            _maxPrecursors = Integer.parseInt(TargetedMSModule.MAX_PRECURSORS_PROPERTY.getEffectiveValue(container));
+        }
+        catch (NumberFormatException e)
+        {
+            _maxPrecursors = TargetedMSModule.DEFAULT_MAX_PRECURSORS;
+            _log.warn("Unable to parse MAX_PRECURSORS_PROPERTY value: " + TargetedMSModule.MAX_PRECURSORS_PROPERTY.getEffectiveValue(container) + ", defaulting to " + _maxPrecursors);
+        }
+        try
+        {
+            _maxTransitionChromInfos = Integer.parseInt(TargetedMSModule.MAX_TRANSITION_CHROM_INFOS_PROPERTY.getEffectiveValue(container));
+        }
+        catch (NumberFormatException e)
+        {
+            _maxTransitionChromInfos = TargetedMSModule.DEFAULT_MAX_TRANSITION_CHROM_INFOS;
+            _log.warn("Unable to parse MAX_TRANSITION_CHROM_INFOS_PROPERTY value: " + TargetedMSModule.MAX_TRANSITION_CHROM_INFOS_PROPERTY.getEffectiveValue(container) + ", defaulting to " + _maxTransitionChromInfos);
+        }
     }
 
     /** @return false if we've exceeded the maximum count of TransitionChromInfos that we want to store for a run,
      * or true if we're below the threshold and should retain them */
     public boolean shouldSaveTransitionChromInfos()
     {
-        return _transitionChromInfoCount < MAX_TRANSITION_CHROM_INFOS || _precursorCount < MAX_PRECURSORS;
+        return _transitionChromInfoCount < _maxTransitionChromInfos || _precursorCount < _maxPrecursors;
     }
 
     @Override

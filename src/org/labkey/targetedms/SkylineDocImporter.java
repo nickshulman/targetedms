@@ -405,8 +405,8 @@ public class SkylineDocImporter
             {
                 _log.info("None of the " + parser.getTransitionChromInfoCount() + " TransitionChromInfos in the file " +
                         "were imported because they exceed the limit of " +
-                        SkylineDocumentParser.MAX_TRANSITION_CHROM_INFOS + " and there are more than " +
-                        SkylineDocumentParser.MAX_PRECURSORS + " precursors");
+                        TargetedMSModule.MAX_TRANSITION_CHROM_INFOS_PROPERTY.getEffectiveValue(_container) + " and there are more than " +
+                        TargetedMSModule.MAX_PRECURSORS_PROPERTY.getEffectiveValue(_container) + " precursors");
                 SQLFragment whereClause = new SQLFragment("WHERE r.Id = ?", _runId);
 
                 // Clear out any of the TransitionChromInfo and related tables that we inserted before we exceeded
