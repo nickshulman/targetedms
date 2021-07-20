@@ -29,6 +29,7 @@ import org.labkey.serverapi.reader.TabLoader;
 import org.labkey.test.BaseWebDriverTest;
 import org.labkey.test.Locator;
 import org.labkey.test.Locators;
+import org.labkey.test.ModulePropertyValue;
 import org.labkey.test.SortDirection;
 import org.labkey.test.TestFileUtils;
 import org.labkey.test.categories.DailyB;
@@ -75,6 +76,12 @@ public class TargetedMSCalibrationCurveTest extends TargetedMSTest
         init.setupFolder(FolderType.Experiment);
     }
 
+//    protected String getProjectName()
+//    {
+//        return "TargetedMSProject";
+//    }
+
+
     @Test
     public void testMergeDocumentsScenario() throws Exception
     {
@@ -88,6 +95,33 @@ public class TargetedMSCalibrationCurveTest extends TargetedMSTest
 
         runScenario("MergedDocuments", "none", fom);
         testCalibrationCurveMoleculePrecursorsByReplicate();
+    }
+
+    @Test
+    public void testMergeDocumentsUsingPrecursorLevelDataScenario() throws Exception
+    {
+        setUsePrecursorLevelData();
+        FiguresOfMerit fom = new FiguresOfMerit("VIFDANAPVAVR");
+        fom.setLoq("1.0");
+        fom.setUloq("10.0");
+        fom.setBiasLimit("20%");
+        fom.setCvLimit("20%");
+        fom.setLod("0.11");
+        fom.setCalc("Blank plus 2 * SD");
+
+        runScenario("MergedDocuments", "none", fom);
+    }
+
+    public void setUsePrecursorLevelData() {
+        goToProjectHome();
+        goToFolderManagement();
+        clickAndWait(Locator.linkWithText("Module Properties"));
+        setModuleProperties(Arrays.asList(
+                new ModulePropertyValue("TargetedMS", "/" + getProjectName(),
+                        "TransitionChromInfo storage limit", "0"),
+                new ModulePropertyValue("TargetedMS", "/" + getProjectName(),
+                        "Precursor storage limit", "0")));
+
     }
 
     @Test

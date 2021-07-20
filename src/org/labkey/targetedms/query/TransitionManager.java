@@ -346,6 +346,9 @@ public class TransitionManager
         return new RtRange(0,0);
     }
 
+    /**
+     * Returns true if there are any TransitionChromInfo rows associated with the run.
+     */
     public static boolean runHasTransitionChromInfos(TargetedMSRun run) {
         SQLFragment sql = new SQLFragment("SELECT EXISTS (SELECT tci FROM " +
                 TargetedMSManager.getTableInfoReplicate() + " r INNER JOIN " +
