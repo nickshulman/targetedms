@@ -37,7 +37,7 @@ import org.labkey.targetedms.parser.GeneralTransition;
 import org.labkey.targetedms.parser.Peptide;
 import org.labkey.targetedms.parser.Precursor;
 import org.labkey.targetedms.parser.PrecursorChromInfo;
-import org.labkey.targetedms.parser.RepresentativeDataState;
+import org.labkey.api.targetedms.RepresentativeDataState;
 import org.labkey.targetedms.parser.TransitionChromInfo;
 
 import java.util.ArrayList;
@@ -245,7 +245,7 @@ public class ConflictResultsManager
 
     private static BestPrecursorPeptide getBestPrecursor(Peptide peptide, User user, Container container)
     {
-        PrecursorChromInfo bestPrecursorChromInfo = PrecursorManager.getBestPrecursorChromInfoForPeptide(peptide.getId());
+        PrecursorChromInfo bestPrecursorChromInfo = PrecursorManager.getBestPrecursorChromInfo(PrecursorManager.getPrecursorChromInfosForPeptide(peptide.getId()));
 
         BestPrecursorPeptide bestPrecursorPeptide = new BestPrecursorPeptide();
         bestPrecursorPeptide.setPeptide(peptide);

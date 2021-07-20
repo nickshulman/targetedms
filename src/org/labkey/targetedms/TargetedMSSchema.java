@@ -59,6 +59,8 @@ import org.labkey.api.query.SchemaKey;
 import org.labkey.api.query.UserIdQueryForeignKey;
 import org.labkey.api.query.UserSchema;
 import org.labkey.api.security.User;
+import org.labkey.api.targetedms.RepresentativeDataState;
+import org.labkey.api.targetedms.RunRepresentativeDataState;
 import org.labkey.api.util.ContainerContext;
 import org.labkey.api.util.HtmlString;
 import org.labkey.api.util.StringExpression;
@@ -70,10 +72,10 @@ import org.labkey.api.view.template.ClientDependency;
 import org.labkey.targetedms.parser.Chromatogram;
 import org.labkey.targetedms.parser.ChromatogramBinaryFormat;
 import org.labkey.targetedms.parser.ReplicateAnnotation;
-import org.labkey.targetedms.parser.RepresentativeDataState;
 import org.labkey.targetedms.parser.SkylineBinaryParser;
 import org.labkey.targetedms.query.*;
 import org.labkey.targetedms.view.AnnotationUIDisplayColumn;
+import org.labkey.targetedms.view.FontAwesomeLinkColumn;
 import org.springframework.validation.BindException;
 import org.springframework.web.servlet.mvc.Controller;
 
@@ -936,9 +938,9 @@ public class TargetedMSSchema extends UserSchema
         if (TABLE_REPRESENTATIVE_DATA_STATE_RUN.equalsIgnoreCase(name))
         {
             return new EnumTableInfo<>(
-                    TargetedMSRun.RepresentativeDataState.class,
+                    RunRepresentativeDataState.class,
                     this,
-                    TargetedMSRun.RepresentativeDataState::getLabel,
+                    RunRepresentativeDataState::getLabel,
                     true,
                     "Possible states a run might be in for resolving representative data after upload"
                     );
@@ -989,6 +991,67 @@ public class TargetedMSSchema extends UserSchema
             labelColumn.setURL(result.getDetailsURL(null, null));
             if (proteomics)
             {
+                // Figure out if we have at least 3 replicates marked as QCs, and we have a "Day" annotation column
+                SQLFragment reproducibilitySQL = new SQLFragment("(SELECT CASE WHEN COUNT(*) > 2 THEN COUNT(*) END FROM ");
+                reproducibilitySQL.append(TargetedMSManager.getTableInfoReplicate(), "r");
+                reproducibilitySQL.append(" INNER JOIN ");
+                reproducibilitySQL.append(TargetedMSManager.getTableInfoReplicateAnnotation(), "ra");
+                reproducibilitySQL.append(" ON ra.ReplicateId = r.Id AND LOWER(ra.Name) = 'day' WHERE r.RunId = ");
+                reproducibilitySQL.append(ExprColumn.STR_TABLE_ALIAS);
+                reproducibilitySQL.append(".RunId AND (r.SampleType IS NULL OR r.SampleType IN ('qc'))");
+                reproducibilitySQL.append(")");
+
+                // Render a link to the reproducibility report
+                ExprColumn reproducibilityCol = new ExprColumn(result, "Reproducibility", reproducibilitySQL, JdbcType.INTEGER, result.getColumn("Id"));
+                result.addColumn(reproducibilityCol);
+                reproducibilityCol.setURL(DetailsURL.fromString("passport-protein.view?proteinId=${Id}"));
+
+                reproducibilityCol.setDisplayColumnFactory(colInfo -> new FontAwesomeLinkColumn(colInfo, "fa-th", "Reproducibility Report"));
+
+                // Create SQL to see if we have one or more calibration curves.
+                // If there's a single match, the value will be the id of the curve's row. If there are multiple
+                // curves, the value will be the negative value of the run's row so that we can send the user
+                // to the full list of curves to let the user choose which peptide to view
+                SQLFragment calCurveSQL = new SQLFragment("(SELECT CASE WHEN COUNT(*) > 1 THEN ");
+                calCurveSQL.append(ExprColumn.STR_TABLE_ALIAS);
+                calCurveSQL.append(".RunId * -1 WHEN COUNT(*) = 1 THEN MIN(cc.Id) END FROM ");
+                calCurveSQL.append(TargetedMSManager.getTableInfoCalibrationCurve(), "cc");
+                calCurveSQL.append(" INNER JOIN ");
+                calCurveSQL.append(TargetedMSManager.getTableInfoGeneralMolecule(), "gm");
+                calCurveSQL.append(" ON cc.GeneralMoleculeId = gm.Id AND gm.PeptideGroupId = ");
+                calCurveSQL.append(ExprColumn.STR_TABLE_ALIAS);
+                calCurveSQL.append(".Id)");
+
+                ExprColumn calCurvesCol = new ExprColumn(result, "CalibrationCurves", calCurveSQL, JdbcType.INTEGER, result.getColumn("Id"));
+                result.addColumn(calCurvesCol);
+
+                calCurvesCol.setDisplayColumnFactory(colInfo -> new FontAwesomeLinkColumn(colInfo, "fa-line-chart", "Calibration Curves")
+                {
+                    @Override
+                    protected String renderURLorValueURL(RenderContext ctx)
+                    {
+                        Number value = (Number)getValue(ctx);
+                        if (value != null)
+                        {
+                            // If value is positive, it means there's a single curve and we can link directly to it
+                            if (value.intValue() > 0)
+                            {
+                                return new ActionURL(TargetedMSController.ShowCalibrationCurveAction.class, getContainer()).addParameter("calibrationCurveId", value.intValue()).getLocalURIString();
+                            }
+                            Long groupId = ctx.get(new FieldKey(getColumnInfo().getFieldKey().getParent(), "Id"), Long.class);
+                            // If the value is negative, it's the run ID. Use it to send the user to the listing
+                            if (value.intValue() < 0 && groupId != null)
+                            {
+                                return new ActionURL(TargetedMSController.ShowCalibrationCurvesAction.class, getContainer()).
+                                        addParameter("id", value.intValue() * -1).
+                                        addParameter("calibration_curves.GeneralMoleculeId/PeptideGroupId~eq", groupId).
+                                        getLocalURIString();
+                            }
+                        }
+                        return null;
+                    }
+                });
+
                 labelColumn.setDisplayColumnFactory(new DisplayColumnFactory()
                 {
                     @Override
@@ -1593,7 +1656,7 @@ public class TargetedMSSchema extends UserSchema
                 throw new RuntimeSQLException(e);
             }
             catch (Exception exception) {
-                throw new UnexpectedException(exception);
+                throw UnexpectedException.wrap(exception);
             }
 
 

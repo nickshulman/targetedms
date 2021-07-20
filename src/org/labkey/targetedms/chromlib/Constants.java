@@ -29,10 +29,6 @@ class Constants
 
     public static final DateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
 
-    public static final String LIB_FILE_DIR = "targetedMSLib";
-    public static final String CHROM_LIB_FILE_NAME = "chromlib";
-    public static final String CHROM_LIB_FILE_EXT = "clib";
-
     public static final String SCHEMA_VERSION = "3.0";
 
     public enum Table
@@ -136,6 +132,7 @@ class Constants
         UncompressedSize("INTEGER"),
         ChromatogramFormat("INTEGER"),
         Adduct("VARCHAR(200)"),
+        Quantitative("BOOL"),
         ExplicitIonMobility("DOUBLE"),
         CCS("DOUBLE"),
         IonMobilityMS1("DOUBLE"),
@@ -145,6 +142,7 @@ class Constants
         ExplicitIonMobilityUnits("VARCHAR(200)"),
         ExplicitCcsSqa("DOUBLE"),
         ExplicitCompensationVoltage("DOUBLE"),
+        QValue("DOUBLE"),
 
         PrecursorId("INTEGER NOT NULL", Table.Precursor, Id),
         IsotopeModId("INTEGER NOT NULL", Table.IsotopeModification, Id),
@@ -290,7 +288,7 @@ class Constants
     {
         Id(Column.Id),
         Name(Column.Name, "VARCHAR(100) NOT NULL"),
-        AminoAcid(Column.AminoAcid, "VARCHAR(30)"),
+        AminoAcid(Column.AminoAcid, "VARCHAR(100)"),
         Terminus(Column.Terminus),
         Formula(Column.Formula),
         MassDiffMono(Column.MassDiffMono),
@@ -359,7 +357,7 @@ class Constants
         Id(Column.Id),
         Name(Column.Name, "VARCHAR(100) NOT NULL"),
         IsotopeLabel(Column.IsotopeLabel),
-        AminoAcid(Column.AminoAcid, "VARCHAR(30)"),
+        AminoAcid(Column.AminoAcid, "VARCHAR(100)"),
         Terminus(Column.Terminus),
         Formula(Column.Formula),
         MassDiffMono(Column.MassDiffMono),
@@ -531,6 +529,7 @@ class Constants
         ExplicitIonMobilityUnits(Column.ExplicitIonMobilityUnits),
         ExplicitCcsSqa(Column.ExplicitCcsSqa),
         ExplicitCompensationVoltage(Column.ExplicitCompensationVoltage),
+        QValue(Column.QValue),
 
         Adduct(Column.Adduct);
 
@@ -637,7 +636,8 @@ class Constants
 
         FragmentName(Column.FragmentName),
         ChemicalFormula(Column.ChemicalFormula),
-        Adduct(Column.Adduct);
+        Adduct(Column.Adduct),
+        Quantitative(Column.Quantitative);
 
         private final Column _column;
         private final String _definition;

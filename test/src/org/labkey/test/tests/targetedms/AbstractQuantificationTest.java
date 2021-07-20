@@ -402,17 +402,7 @@ public class AbstractQuantificationTest extends TargetedMSTest
                 goBack();
                 calibrationCurvesTable.clickRowDetails(rowWithoutData);
 
-                calibrationCurveWebpart = new CalibrationCurveWebpart(getDriver());
-                assertEquals("Calibration curve with no data shouldn't have any points", 0, calibrationCurveWebpart.getSvgPoints().size());
-                actualLegendText = calibrationCurveWebpart.getSvgLegendItems();
-                expectedLegendText = new ArrayList<>(baseLegendText);
-                expectedLegendText.addAll(Arrays.asList(
-                    "Slope: 0",
-                    "Intercept: 0",
-                    "rSquared: 0"
-                ));
-                assertEquals("Wrong legend text", expectedLegendText, actualLegendText);
-            }
+                assertTextPresent("Unable to calculate curve, since there are no data points available");            }
         }
 
         testFiguresOfMerit(scenario, fom);
