@@ -49,7 +49,7 @@ public class TargetedMSPrecursorLevelDataTest extends AbstractQuantificationTest
 
     }
     @Test
-    public void testMergedDocumentsUsingPrecursorLevelDataScenario() throws Exception
+    public void testUsingPrecursorLevelData() throws Exception
     {
         setUsePrecursorLevelData();
         FiguresOfMerit fom = new FiguresOfMerit("VIFDANAPVAVR");

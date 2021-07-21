@@ -176,12 +176,12 @@ public class AbstractQuantificationTest extends TargetedMSTest
 
     private void verifyFomSummary(FiguresOfMerit fom)
     {
-        assertElementContains(Locator.tagWithId("td", "loq-stat"), "Lower: " + fom.getLoq());
-        assertElementContains(Locator.tagWithId("td", "uloq-stat"), "Upper: " + fom.getUloq());
-        assertElementContains(Locator.tagWithId("td", "bias-limit"), "Bias Limit: " + fom.getBiasLimit());
-        assertElementContains(Locator.tagWithId("td", "cv-limit"), "CV Limit: " + fom.getCvLimit());
-        assertElementContains(Locator.tagWithId("td", "lod-value"), "Lower: " + fom.getLod());
-        assertElementContains(Locator.tagWithId("td", "lod-calc"), "Calculation: " + fom.getCalc());
+        assertElementContains(Locator.tagWithId("td", "lloq-stat"), fom.getLoq());
+        assertElementContains(Locator.tagWithId("td", "uloq-stat"), fom.getUloq());
+        assertElementContains(Locator.tagWithId("td", "bias-limit"), fom.getBiasLimit());
+        assertElementContains(Locator.tagWithId("td", "cv-limit"), fom.getCvLimit());
+        assertElementContains(Locator.tagWithId("td", "llod-value"), fom.getLod());
+        assertElementContains(Locator.tagWithId("td", "lod-calc"), fom.getCalc());
     }
 
     private void testFiguresOfMerit(String scenario, @Nullable FiguresOfMerit fom)
@@ -244,10 +244,10 @@ public class AbstractQuantificationTest extends TargetedMSTest
         clickAndWait(Locator.linkContainingText(scenario + ".sky.zip"));
         clickAndWait(Locator.linkContainingText("calibration curve"));
 
-        calibrationCurvesTable = new DataRegionTable((peptide?"calibration_curves":"calibration_curves_sm_mol"), this);
-        calibrationCurvesTable.setFilter("GeneralMoleculeId", "Equals", (fom!=null?fom.getName():molName));
-
-        clickAndWait(Locator.linkContainingText("Fom"));
+        // Go to the calibration curve detail page
+        clickAndWait(Locator.linkContainingText(fom != null ? fom.getName() : molName));
+        // Drill into the FOM details page
+        clickAndWait(Locator.linkContainingText("Show Details"));
 
         waitForElement(Locators.pageSignal("targetedms-fom-loaded"));
 
